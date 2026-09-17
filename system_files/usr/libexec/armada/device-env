@@ -70,6 +70,13 @@ if [[ "${ARMADA_SUSPEND_MODE:-fake}" == "mem" ]]; then
         ARMADA_SUSPEND_MODE=fake
     fi
 fi
+# Never hand systemd-sleep a mode the running kernel cannot do (including a
+# profile default): a real mode that mem_sleep does not advertise degrades to
+# fake so suspend still happens instead of failing.
+if [[ "$ARMADA_SUSPEND_MODE" != fake ]] &&
+    ! grep -qw "$ARMADA_SUSPEND_MODE" <<<"$mem_sleep_modes"; then
+    ARMADA_SUSPEND_MODE=fake
+fi
 
 # Proton defaults are tried in order and must match Steam compatibility
 # tool IDs.

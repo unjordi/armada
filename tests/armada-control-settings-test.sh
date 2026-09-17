@@ -178,6 +178,7 @@ assert plugin_system.set_bottom_screen_brightness(40) == 40
 plugin_system.MEM_SLEEP_PATH = control.MEM_SLEEP_PATH
 assert plugin_system.sleep_modes() == [
     {"data": "s2idle", "label": "Native"},
+    {"data": "deep", "label": "Deep"},
     {"data": "fake", "label": "Fake"},
 ]
 
@@ -197,15 +198,18 @@ assert control.SLEEP_CONFIG.read_text() == (
 assert control.NM_IGNORE_SLEEP.exists()
 
 control.MEM_SLEEP_PATH.write_text("[s2idle] deep\n")
-try:
-    control.action_set_sleep_mode({"value": "deep"})
-except RuntimeError:
-    pass
-else:
-    raise AssertionError("retired deep sleep setting was accepted")
+assert control.action_set_sleep_mode({"value": "deep"}) == {"value": "deep"}
+assert control.MEM_SLEEP_PATH.read_text() == "deep\n"
+assert control.SLEEP_CONFIG.read_text() == (
+    "future_sleep_setting=keep\nsuspend_mode=deep\n"
+)
+assert not control.NM_IGNORE_SLEEP.exists()
 
 control.MEM_SLEEP_PATH.write_text("[deep]\n")
-assert plugin_system.sleep_modes() == [{"data": "fake", "label": "Fake"}]
+assert plugin_system.sleep_modes() == [
+    {"data": "deep", "label": "Deep"},
+    {"data": "fake", "label": "Fake"},
+]
 try:
     control.action_set_sleep_mode({"value": "s2idle"})
 except RuntimeError:
@@ -244,7 +248,7 @@ printf 'suspend_mode=s2idle\n' >"$WORK/sleep.conf"
 device_env "AYN Odin 2" s2idle
 
 printf 'suspend_mode=deep\n' >"$WORK/sleep.conf"
-device_env "AYN Odin 2" s2idle
+device_env "AYN Odin 2" deep
 
 printf 'suspend_mode = s2idle\nsuspend_mode = fake\n' >"$WORK/sleep.conf"
 device_env "AYN Odin 2" fake
@@ -262,7 +266,7 @@ printf 'suspend_mode=s2idle\n' >"$WORK/sleep.conf"
 device_env "Retroid Pocket 5" fake
 
 printf 'suspend_mode=deep\n' >"$WORK/sleep.conf"
-device_env "AYN Odin 2" fake
+device_env "AYN Odin 2" deep
 
 : >"$WORK/mem_sleep"
 rm -f "$WORK/sleep.conf"
@@ -278,9 +282,9 @@ env ARMADA_DEVICE_ENV="$DEVICE_ENV" \
     ARMADA_MEM_SLEEP_PATH="$WORK/mem_sleep" \
     ARMADA_NM_IGNORE_SLEEP="$WORK/ignore-sleep" \
     "$DEVICE_QUIRKS" >/dev/null
-grep -x 's2idle' "$WORK/mem_sleep" >/dev/null
+grep -x 'deep' "$WORK/mem_sleep" >/dev/null
 [[ "$(cat "$WORK/sleep.conf")" == "future_sleep_setting=keep
-suspend_mode=s2idle" ]]
+suspend_mode=deep" ]]
 [[ ! -e "$WORK/ignore-sleep" ]]
 
 printf '[s2idle] deep\n' >"$WORK/mem_sleep"
@@ -326,8 +330,9 @@ grep -x 'suspend' "$WORK/sleep-call" >/dev/null
 
 printf '[s2idle] deep\n' >"$WORK/mem_sleep"
 dispatch deep
-grep -x 'sleep' "$WORK/fake-sleep-call" >/dev/null
-[[ ! -e "$WORK/sleep-call" ]]
+grep -x 'deep' "$WORK/mem_sleep" >/dev/null
+grep -x 'suspend' "$WORK/sleep-call" >/dev/null
+[[ ! -e "$WORK/fake-sleep-call" ]]
 
 printf '[deep]\n' >"$WORK/mem_sleep"
 dispatch s2idle

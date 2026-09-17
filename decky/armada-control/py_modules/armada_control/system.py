@@ -10,6 +10,7 @@ OS_VERSION_PATH = Path("/usr/lib/armada/version")
 MEM_SLEEP_PATH = Path("/sys/power/mem_sleep")
 SLEEP_MODE_LABELS = {
     "s2idle": "Native",
+    "deep": "Deep",
     "fake": "Fake",
 }
 DESKTOP_MODE_LABELS = {
@@ -163,7 +164,11 @@ def desktop_modes():
 
 def sleep_modes():
     advertised = {word.strip("[]") for word in read_text(MEM_SLEEP_PATH).split()}
-    modes = (["s2idle"] if "s2idle" in advertised else []) + ["fake"]
+    modes = (
+        (["s2idle"] if "s2idle" in advertised else [])
+        + (["deep"] if "deep" in advertised else [])
+        + ["fake"]
+    )
     return [{"data": mode, "label": SLEEP_MODE_LABELS[mode]} for mode in modes]
 
 
