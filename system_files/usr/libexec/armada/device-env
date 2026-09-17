@@ -48,7 +48,6 @@ mem_sleep_modes=
 if [[ -r "$mem_sleep" ]]; then
     mem_sleep_modes=$(<"$mem_sleep")
 fi
-selected_mem_sleep=$(sed -n 's/.*\[\([^]]*\)\].*/\1/p' <<<"$mem_sleep_modes")
 
 sleep_config=${ARMADA_SLEEP_CONFIG:-/etc/armada/sleep.conf}
 if [[ -r "$sleep_config" ]]; then
@@ -62,13 +61,6 @@ if [[ -r "$sleep_config" ]]; then
             fi
         fi
     done <"$sleep_config"
-fi
-if [[ "${ARMADA_SUSPEND_MODE:-fake}" == "mem" ]]; then
-    if [[ "$selected_mem_sleep" == "s2idle" || "$selected_mem_sleep" == "deep" ]]; then
-        ARMADA_SUSPEND_MODE=$selected_mem_sleep
-    else
-        ARMADA_SUSPEND_MODE=fake
-    fi
 fi
 # Never hand systemd-sleep a mode the running kernel cannot do (including a
 # profile default): a real mode that mem_sleep does not advertise degrades to
