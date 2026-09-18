@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .privileged import call
 from .fan_sensors import get_current_temp
+from . import power
 
 # Shared with Armada Control: only owns [fan_curve.*] sections, [fan]'s
 # ramp/smoothing/min_pwm keys, and [battery_fan]'s "enabled" toggle (armada#29
@@ -15,8 +16,6 @@ from .fan_sensors import get_current_temp
 # fan-stopped.
 POWER_CONFIG = Path("/etc/armada/power-profiles.conf")
 FACTORY_POWER_CONFIG = Path("/usr/share/armada/power-profiles.conf")
-# Profile armada-powerd is actually running (may differ from [general] default_profile).
-STATE_FILE = Path("/var/lib/armada/powerd.state")
 PROFILE_NAMES = ("eco", "balanced", "performance")
 
 CURVE_NAME_RE = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
@@ -119,16 +118,13 @@ def _curve_has_fan_stop(curve_string):
 
 
 def _read_active_profile(merged, profiles):
-    # Prefer live daemon state; fall back to the configured default, then any profile.
-    try:
-        for line in STATE_FILE.read_text(encoding="utf-8").splitlines():
-            if not line.startswith("profile="):
-                continue
-            value = line.split("=", 1)[1].strip()
-            if value in profiles:
-                return value
-    except OSError:
-        pass
+    # Single source of truth for the live profile: delegate to power.active_profile
+    # (same read the Power tab uses, armada#24) so the Fans and Power tabs can't
+    # diverge. Only if that can't be read do we fall back to the configured
+    # default, then any profile.
+    active = power.active_profile(profiles)
+    if active is not None:
+        return active
 
     default_profile = merged.get("general", "default_profile", fallback="")
     if default_profile in profiles:

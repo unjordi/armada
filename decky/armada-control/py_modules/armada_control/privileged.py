@@ -17,12 +17,15 @@ def call(action, **payload):
                 if not chunk:
                     break
                 data += chunk
-    except (FileNotFoundError, ConnectionRefusedError):
-        # armada-control.service isn't up (or its socket path changed). Give
-        # the UI something actionable instead of a raw errno message.
-        raise RuntimeError("Couldn't reach the Armada system service")
     except socket.timeout:
         raise RuntimeError("The Armada system service didn't respond (timed out)")
+    except OSError:
+        # armada-control.service isn't up (or its socket path changed), or it
+        # died mid-request (ConnectionResetError/BrokenPipeError in the real
+        # crash-loop case). OSError is the super-class covering all of those
+        # plus TimeoutError. Give the UI something actionable instead of a raw
+        # errno message.
+        raise RuntimeError("Couldn't reach the Armada system service")
     try:
         response = json.loads(data.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):

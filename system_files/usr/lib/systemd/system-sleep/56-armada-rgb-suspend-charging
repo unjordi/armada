@@ -62,14 +62,14 @@ case "${1:-}" in
     pre)
         battery_charging || exit 0
         indicator_enabled || exit 0
-        "$rgb_tool" charge-indicator on --color "$charge_color" --brightness "$charge_brightness" >/dev/null 2>&1 || true
+        timeout 5 "$rgb_tool" charge-indicator on --color "$charge_color" --brightness "$charge_brightness" >/dev/null 2>&1 || true
         ;;
     post)
         # Unconditional (per the opt-in toggle's own contract) -- safe even
         # if "on" was never called this sleep (nothing to unpin), and
         # restores the user's saved lighting right away instead of waiting
         # for the run daemon's next tick.
-        "$rgb_tool" charge-indicator off >/dev/null 2>&1 || true
+        timeout 5 "$rgb_tool" charge-indicator off >/dev/null 2>&1 || true
         ;;
 esac
 exit 0
