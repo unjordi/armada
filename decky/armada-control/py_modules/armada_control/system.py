@@ -7,12 +7,10 @@ from .privileged import call
 
 
 OS_VERSION_PATH = Path("/usr/lib/armada/version")
-MEM_SLEEP_PATH = Path("/sys/power/mem_sleep")
-SLEEP_MODE_LABELS = {
-    "s2idle": "Native",
-    "deep": "Deep",
-    "fake": "Fake",
-}
+# Sleep-mode labels and the mode menu are owned by the privileged backend (see
+# armada-control's sleep_modes); this module consumes them via `call` so there
+# is a single source of truth. DESKTOP_MODE_LABELS stays local: desktop modes
+# have no backend menu action.
 DESKTOP_MODE_LABELS = {
     "mobile": "Plasma Mobile",
     "desktop": "Plasma Desktop"
@@ -163,13 +161,18 @@ def desktop_modes():
     return [{"data": mode, "label": DESKTOP_MODE_LABELS[mode]} for mode in modes]
 
 def sleep_modes():
-    advertised = {word.strip("[]") for word in read_text(MEM_SLEEP_PATH).split()}
-    modes = (
-        (["s2idle"] if "s2idle" in advertised else [])
-        + (["deep"] if "deep" in advertised else [])
-        + ["fake"]
-    )
-    return [{"data": mode, "label": SLEEP_MODE_LABELS[mode]} for mode in modes]
+    # Single source of truth: the privileged backend owns the fleet's sleep-mode
+    # menu (which modes exist, and which are greyed out because the model is not
+    # validated for deep). The plugin consumes it rather than re-deriving from
+    # mem_sleep, so display and enforcement never drift. If the backend is
+    # unreachable, fall back to the always-safe "fake" only.
+    try:
+        modes = call("get_sleep_modes").get("modes")
+        if isinstance(modes, list):
+            return modes
+    except Exception:
+        pass
+    return [{"data": "fake", "label": "Fake", "disabled": False}]
 
 
 def set_sleep_mode(value):

@@ -132,6 +132,9 @@ export type Capture = Record<string, { center: number; min: number; max: number;
 export interface DropdownChoice {
   data: string;
   label: string;
+  // Present but not selectable (e.g. deep sleep on a model not yet validated for
+  // it): the option is shown greyed with a "(not validated)" cue instead of hidden.
+  disabled?: boolean;
 }
 
 export interface ProfileSummary {

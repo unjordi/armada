@@ -40,6 +40,10 @@ NM_IGNORE_SLEEP = Path("/etc/NetworkManager/ignore-sleep")
 MEM_SLEEP_PATH = Path("/sys/power/mem_sleep")
 DESKTOP_SESSION_PATH = Path("/etc/armada/desktop-session")
 DESKTOP_MODES = {"desktop", "mobile"}
+# Menu labels for the sleep-mode dropdown. This module owns the authoritative
+# sleep-mode list (both the UI menu and the enforcement set derive from it); the
+# Decky plugin consumes it instead of re-deriving its own.
+SLEEP_MODE_LABELS = {"s2idle": "Native", "deep": "Deep", "fake": "Fake"}
 BOTTOM_SCREEN_SERVICE = "armada-bottom-screen.service"
 GAME_MODE_SERVICE = "gamescope-session-plus@steam.service"
 BOTTOM_SCREEN_BRIGHTNESS_PATH = Path("/etc/armada/bottom-screen-brightness")
@@ -387,7 +391,15 @@ def action_get_mtp_enabled(request):
     return {"enabled": mtp_enabled()}
 
 
-def available_sleep_modes():
+def sleep_modes():
+    """Authoritative sleep-mode menu for the fleet: THE single source of truth
+    for both the UI (which greys out unvalidated modes) and enforcement (which
+    rejects them). Two gates decide 'deep': (1) the running kernel must advertise
+    it in mem_sleep -- an unadvertised mode is omitted entirely -- and (2) the
+    model must be validated for deep (ARMADA_SUSPEND_DEEP_VALIDATED, resolved by
+    device-env). A deep-capable kernel always OFFERS deep, but marks it disabled
+    until the device is validated, so the UI can show it greyed rather than hide
+    it. Order matches the historical menu: s2idle, deep, fake."""
     try:
         advertised = {
             word.strip("[]")
@@ -395,7 +407,23 @@ def available_sleep_modes():
         }
     except OSError:
         advertised = set()
-    return {"fake"} | ({"s2idle", "deep"} & advertised)
+    deep_validated = device_env().get("ARMADA_SUSPEND_DEEP_VALIDATED") == "1"
+    modes = []
+    if "s2idle" in advertised:
+        modes.append(("s2idle", False))
+    if "deep" in advertised:
+        modes.append(("deep", not deep_validated))
+    modes.append(("fake", False))
+    return [
+        {"data": mode, "label": SLEEP_MODE_LABELS[mode], "disabled": disabled}
+        for mode, disabled in modes
+    ]
+
+
+def enabled_sleep_modes():
+    """Modes the user may actually select, derived from sleep_modes() so display
+    and enforcement never drift (a greyed/unvalidated mode is not selectable)."""
+    return {mode["data"] for mode in sleep_modes() if not mode["disabled"]}
 
 def action_get_desktop_mode(request):
     return {"value": get_desktop_mode()}
@@ -406,9 +434,16 @@ def action_set_desktop_mode(request):
     set_desktop_mode(value)
     return {"value": get_desktop_mode()}
 
+def action_get_sleep_modes(request):
+    return {"modes": sleep_modes()}
+
+
 def action_set_sleep_mode(request):
     value = str(request.get("value", ""))
-    if value not in available_sleep_modes():
+    # Defense in depth: reject a mode the UI should have greyed out (deep on an
+    # unvalidated model, or a kernel-unadvertised mode), reading the SAME source
+    # of truth the menu is built from.
+    if value not in enabled_sleep_modes():
         raise RuntimeError("sleep mode is not supported on this device")
 
     select_mem_sleep(value)
@@ -770,6 +805,7 @@ ACTIONS = {
     "set_abl_auto_enabled": action_set_abl_auto_enabled,
     "get_desktop_mode": action_get_desktop_mode,
     "set_desktop_mode": action_set_desktop_mode,
+    "get_sleep_modes": action_get_sleep_modes,
     "set_sleep_mode": action_set_sleep_mode,
     "write_config": action_write_config,
     "reapply_perf": action_reapply_perf,
