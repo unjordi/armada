@@ -71,7 +71,20 @@ export interface CalibrationState {
   params?: Record<string, number>;
 }
 
-export type RgbEffect = "static" | "breathing" | "color_cycle" | "rainbow" | "load" | "battery";
+// Matches the armada-rgb CLI contract
+// (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md, corrected 2026-09-18
+// late): screen_sync (armada#27) is an effect (per-side ambilight off
+// gamescope screenshots). armada#23 (brightness-sync) is NOT an effect --
+// it's the orthogonal `syncBrightness` field below (dedicated
+// `sync-brightness on|off` command), combinable with any effect here.
+export type RgbEffect =
+  | "static"
+  | "breathing"
+  | "color_cycle"
+  | "rainbow"
+  | "load"
+  | "battery"
+  | "screen_sync";
 
 export interface RgbConfig {
   version: number;
@@ -81,6 +94,11 @@ export interface RgbConfig {
   // Omitted by armada-rgb when at their defaults (static / 100).
   effect?: RgbEffect;
   speed?: number;
+  // armada#23: raw pass-through of armada-rgb's own JSON key (snake_case,
+  // matching every other RgbConfig field -- this object is never
+  // camelCased, it's armada-rgb's LightingConfig verbatim). Omitted when
+  // false/default.
+  sync_brightness?: boolean;
 }
 
 export interface GameRef {
@@ -99,6 +117,11 @@ export interface PerfInfo {
 export interface Config {
   power: PowerConfig;
   powerDefaults: PowerConfig;
+  // armada#24: the profile armada-powerd is running RIGHT NOW (live daemon
+  // state), independent of power.general.default_profile. This is what
+  // Steam's native "Rendimiento" panel also drives, so Power.tsx uses it as
+  // the single source of truth for "what's active" instead of drifting.
+  activePowerProfile: string;
   tweaks: Tweaks;
   installedGames: InstalledGame[];
   fexProfiles: Record<string, FexProfile>;
@@ -159,4 +182,9 @@ export interface CurvesState {
   activeProfile: string;
   // Live marker instead polls get_current_temp (see hooks/useCurrentTemp).
   currentTemp: number | null;
+  // armada#29: opt-in gate for armada-powerd's battery-temperature fan
+  // floor (armada#6). The curve/boost stay factory-only -- this only turns
+  // the whole behaviour on/off, applies immediately (not part of the
+  // curve editor's dirty/Save flow).
+  batteryFanEnabled: boolean;
 }

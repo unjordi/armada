@@ -15,6 +15,7 @@ import {
 } from "../backend";
 import { openCalibration } from "../components/Calibration";
 import { SelectEdit, SliderEdit, ToggleRow } from "../components/widgets";
+import { friendlyError } from "../lib/errors";
 import type { Config } from "../types";
 
 const BOTTOM_SCREEN_BRIGHTNESS_DELAY_MS: number = 150;
@@ -111,7 +112,7 @@ export function Settings({ config, setConfig }: {
       setConfig((current) => (current ? { ...current, bottomScreenEnabled: applied } : current));
     } catch (error) {
       setConfig((current) => (current ? { ...current, bottomScreenEnabled: !enabled } : current));
-      toaster.toast({ title: "Could not change bottom screen", body: String(error) });
+      toaster.toast({ title: "Could not change bottom screen", body: friendlyError(error) });
     }
   };
   const setBottomScreenBrightness = (brightness: number) => {
@@ -130,7 +131,7 @@ export function Settings({ config, setConfig }: {
           ...current,
           bottomScreenBrightness: appliedBottomScreenBrightness.current,
         } : current));
-        toaster.toast({ title: "Could not change bottom-screen brightness", body: String(error) });
+        toaster.toast({ title: "Could not change bottom-screen brightness", body: friendlyError(error) });
       }
     }, BOTTOM_SCREEN_BRIGHTNESS_DELAY_MS);
   };
@@ -142,7 +143,7 @@ export function Settings({ config, setConfig }: {
       setConfig((current: Config | null) => (current ? { ...current, desktopMode: applied } : current));
     } catch (error) {
       setConfig((current: Config | null) => (current ? { ...current, desktopMode: previous } : current));
-      toaster.toast({ title: "Could not change desktop mode", body: String(error) });
+      toaster.toast({ title: "Could not change desktop mode", body: friendlyError(error) });
     }
   }
   const setSleepMode = async (value: string) => {
@@ -153,7 +154,7 @@ export function Settings({ config, setConfig }: {
       setConfig((current) => (current ? { ...current, sleepMode: applied } : current));
     } catch (error) {
       setConfig((current) => (current ? { ...current, sleepMode: previous } : current));
-      toaster.toast({ title: "Could not change sleep mode", body: String(error) });
+      toaster.toast({ title: "Could not change sleep mode", body: friendlyError(error) });
     }
   };
   return (

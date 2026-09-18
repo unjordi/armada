@@ -21,7 +21,18 @@ SOCKET = Path("/run/armada/control.sock")
 SESSION_SOCKET = Path(armada_perf.SESSION_SOCKET)
 ABL_VERSION_TOOL = "/usr/lib/armada/abl-version"
 RGB_TOOL = "/usr/bin/armada-rgb"
-RGB_EFFECTS = ("static", "breathing", "color_cycle", "rainbow", "load", "battery")
+# Matches the armada-rgb CLI contract (.claude/projects/rp6-rgb-cli-contract-
+# 2026-09-18.md, corrected 2026-09-18 late): screen_sync (armada#27) is an
+# effect. armada#23 (brightness-sync) is NOT an effect -- it's the
+# orthogonal `sync-brightness on|off` command below, combinable with any
+# effect here.
+RGB_EFFECTS = ("static", "breathing", "color_cycle", "rainbow", "load", "battery", "screen_sync")
+# armada#26: whether the suspend hook (56-armada-rgb-suspend-charging)
+# should pin the charge-indicator pattern at all -- opt-in (Jordi,
+# 2026-09-18), default OFF. Owned entirely by this plugin (NOT part of
+# armada-rgb's own /etc/armada/rgb.json); the hook reads this file directly
+# since it runs standalone via systemd, not through this socket.
+RGB_CHARGE_INDICATOR_CONFIG = Path("/etc/armada/rgb-charge-indicator.conf")
 RGB_SPEED_MIN = 1
 RGB_SPEED_MAX = 1000
 ABL_CONFIG = Path("/etc/armada/abl.conf")
@@ -34,6 +45,8 @@ MAX_REQUEST = 1024 * 1024
 CLIENT_TIMEOUT = 5
 CONTROLLER_TYPES = {"deck-uhid", "xbox-series", "xb360", "ds5"}
 INTERCEPT_MODES = {"overlay", "reset"}
+ARMADA_POWER_TOOL = "/usr/bin/armada-power"
+POWER_PROFILE_NAMES = ("eco", "balanced", "performance")
 SLEEP_CONFIG = Path("/etc/armada/sleep.conf")
 SUSPEND_MODE_KEY = "suspend_mode"
 NM_IGNORE_SLEEP = Path("/etc/NetworkManager/ignore-sleep")
@@ -524,8 +537,30 @@ def rgb_supported():
 
 
 def run_rgb(command):
-    output = subprocess.check_output([RGB_TOOL, *command], text=True, timeout=5)
-    config = json.loads(output)
+    # Turn low-level subprocess/parse failures into a message the UI can show
+    # as-is instead of a bare "Python Exception" toast (the 2026-09-18 QA:
+    # armada-rgb.service was crash-looping on a version skew and every RGB
+    # action surfaced as opaque text). Each branch says WHAT broke so it's
+    # actionable even without opening a shell.
+    try:
+        output = subprocess.check_output(
+            [RGB_TOOL, *command], text=True, timeout=5, stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("armada-rgb is not installed on this device")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("RGB lighting service isn't responding (timed out)")
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        detail = stderr.strip().splitlines()[-1] if stderr.strip() else ""
+        raise RuntimeError(
+            "RGB lighting service rejected the request"
+            + (f": {detail}" if detail else f" (exit {exc.returncode})")
+        )
+    try:
+        config = json.loads(output)
+    except json.JSONDecodeError:
+        raise RuntimeError("RGB lighting service returned an unexpected response")
     if not isinstance(config, dict):
         raise RuntimeError("invalid armada-rgb response")
     return config
@@ -584,6 +619,56 @@ def action_set_rgb(request):
         command += ["--speed", str(speed)]
 
     return run_rgb(command)
+
+
+def action_set_rgb_sync_brightness(request):
+    # armada#23: an orthogonal toggle, NOT an --effect value -- dedicated
+    # command per the contract, combinable with any effect above.
+    if not rgb_supported():
+        raise RuntimeError("RGB lighting is not supported on this device")
+    enabled = request.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ValueError("invalid RGB sync_brightness state")
+    return run_rgb(["sync-brightness", "on" if enabled else "off"])
+
+
+def rgb_charge_indicator_enabled():
+    try:
+        lines = RGB_CHARGE_INDICATOR_CONFIG.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False  # opt-in: default OFF until the user turns it on
+    for line in lines:
+        key, sep, value = line.partition("=")
+        if sep and key.strip() == "enabled":
+            return value.strip() == "1"
+    return False
+
+
+def action_get_rgb_charge_indicator_enabled(request):
+    return {"enabled": rgb_charge_indicator_enabled()}
+
+
+def action_set_rgb_charge_indicator_enabled(request):
+    enabled = request.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ValueError("invalid charge indicator enabled state")
+    atomic_write(RGB_CHARGE_INDICATOR_CONFIG, f"enabled={int(enabled)}\n")
+    return {"enabled": rgb_charge_indicator_enabled()}
+
+
+def action_set_power_profile(request):
+    name = str(request.get("profile", ""))
+    if name not in POWER_PROFILE_NAMES:
+        raise ValueError("invalid power profile")
+    try:
+        run([ARMADA_POWER_TOOL, "profile", name])
+    except FileNotFoundError:
+        raise RuntimeError("armada-power is not installed on this device")
+    except subprocess.CalledProcessError:
+        raise RuntimeError("could not switch the active power profile")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("armada-power didn't respond (timed out)")
+    return {"profile": name}
 
 
 def action_inputplumber_intercept(request):
@@ -810,6 +895,10 @@ ACTIONS = {
     "write_config": action_write_config,
     "reapply_perf": action_reapply_perf,
     "restart_game_mode": action_restart_game_mode,
+    "set_power_profile": action_set_power_profile,
+    "set_rgb_sync_brightness": action_set_rgb_sync_brightness,
+    "get_rgb_charge_indicator_enabled": action_get_rgb_charge_indicator_enabled,
+    "set_rgb_charge_indicator_enabled": action_set_rgb_charge_indicator_enabled,
 }
 
 

@@ -6,6 +6,7 @@ import { RgbLighting } from "./components/RgbLighting";
 import { useDebouncedSave } from "./hooks/useDebouncedSave";
 import { tabIcons } from "./icons";
 import { currentGame } from "./lib/games";
+import { friendlyError } from "./lib/errors";
 import { styles } from "./styles";
 import { Compatibility } from "./tabs/Compatibility";
 import { Fans } from "./tabs/Fans";
@@ -29,7 +30,7 @@ export function Content() {
       savedTweaksSnapshot.current = JSON.stringify(next.tweaks);
       setConfig((current) => ({ ...next, installedGames: current?.installedGames || next.installedGames }));
     } catch (error) {
-      setMessage(String(error));
+      setMessage(friendlyError(error, "Could not load Armada Control"));
     }
   }, []);
   useEffect(() => {

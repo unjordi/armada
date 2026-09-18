@@ -1,7 +1,11 @@
-import { ButtonItem, PanelSection } from "@decky/ui";
+import { toaster } from "@decky/api";
+import { ButtonItem, Field, PanelSection } from "@decky/ui";
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { SelectEdit, SliderEdit } from "../components/widgets";
+import { setActivePowerProfile } from "../backend";
+import { useActivePowerProfile } from "../hooks/useActivePowerProfile";
+import { friendlyError } from "../lib/errors";
 import { clone, titleCase, update } from "../lib/util";
 import type { Config, PowerProfile } from "../types";
 
@@ -13,11 +17,20 @@ const underclocks = [
 ];
 
 export function Power({ config, setConfig }: { config: Config; setConfig: Dispatch<SetStateAction<Config | null>> }) {
-  const [profile, setProfile] = useState(config.power.general.default_profile || "balanced");
+  // armada#24: start on whatever profile is ACTUALLY running, not a
+  // hardcoded "balanced" -- that's what made "Balanced (editing)" vs
+  // "Eco (Steam's Rendimiento panel)" look like two disagreeing systems.
+  const [profile, setProfile] = useState(
+    config.activePowerProfile || config.power.general.default_profile || "balanced",
+  );
+  const [activating, setActivating] = useState(false);
+  // Live: reflects changes made from Steam's native "Rendimiento" panel too,
+  // while this tab stays open.
+  const activeProfile = useActivePowerProfile(config.activePowerProfile);
   const p = config.power.profiles[profile] || ({} as PowerProfile);
   const profiles = Object.entries(config.power.profiles || {}).map(([name, profile]) => ({
     data: name,
-    label: profile.label || titleCase(name),
+    label: (profile.label || titleCase(name)) + (name === activeProfile ? " • Active" : ""),
   }));
   const fanCurves = Object.entries(config.power.fan_curves || {}).map(([name, curve]) => ({
     data: name,
@@ -46,10 +59,39 @@ export function Power({ config, setConfig }: { config: Config; setConfig: Dispat
     if (!defaults) return;
     setConfig((current) => (current ? update(current, ["power", "profiles", profile], defaults) : current));
   };
+  const activateProfile = async () => {
+    setActivating(true);
+    try {
+      const next = await setActivePowerProfile(profile);
+      setConfig((current) => (current ? { ...current, activePowerProfile: next.activePowerProfile } : current));
+    } catch (error) {
+      toaster.toast({ title: "Could not switch power profile", body: friendlyError(error) });
+    } finally {
+      setActivating(false);
+    }
+  };
+  const activeLabel = config.power.profiles[activeProfile]?.label || titleCase(activeProfile || "");
+  const editingLabel = p.label || titleCase(profile);
   const underclockLevel = p.cpu_underclock || "";
   const supportsUnderclockPresets = !!config.power.underclocks?.[config.cpuDeviceClass];
   return (
     <>
+      <PanelSection title="ACTIVE PROFILE">
+        <Field label="Running now" bottomSeparator="none">
+          {activeLabel}
+        </Field>
+        {profile !== activeProfile ? (
+          <div className="armada-reset-row">
+            <ButtonItem layout="below" onClick={activateProfile} disabled={activating}>
+              {activating ? "Activating..." : `Make "${editingLabel}" active`}
+            </ButtonItem>
+          </div>
+        ) : (
+          <div className="armada-field-note">
+            You're editing the profile that's active right now -- changes below apply live once saved.
+          </div>
+        )}
+      </PanelSection>
       <PanelSection title="EDIT POWER PROFILE">
         <SelectEdit value={profile} options={profiles} onChange={setProfile} />
       </PanelSection>

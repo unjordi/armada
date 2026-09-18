@@ -9,8 +9,14 @@ from armada_control.calibration import (
 )
 from armada_control.config import build_config
 from armada_control.controller import set_controller_type
-from armada_control.power import save_power_config
-from armada_control.rgb import get_rgb, set_rgb
+from armada_control.power import read_active_profile, save_power_config, set_active_profile
+from armada_control.rgb import (
+    get_rgb,
+    get_rgb_charge_indicator_enabled,
+    set_rgb,
+    set_rgb_charge_indicator_enabled,
+    set_rgb_sync_brightness,
+)
 from armada_control.steam import compat_mapped_appids, installed_games
 from armada_control.system import (
     bottom_screen_active,
@@ -25,7 +31,11 @@ from armada_control.system import (
     set_ssh_enabled,
 )
 from armada_control.tweaks import load_compat_applied, save_compat_applied, save_tweaks
-from armada_control.fan_curves import get_state as get_fans_state, save_all as save_fan_curves
+from armada_control.fan_curves import (
+    get_state as get_fans_state,
+    save_all as save_fan_curves,
+    set_battery_fan_enabled,
+)
 from armada_control.fan_sensors import get_current_temp
 
 
@@ -43,6 +53,17 @@ class Plugin:
     async def save_power_config(self, data):
         await asyncio.to_thread(save_power_config, data)
         return await self.get_config()
+
+    # armada#24: switches the LIVE profile (org.armada.Power1 Profile), not
+    # just [general] default_profile -- same effect Steam's "Rendimiento"
+    # panel has, so both surfaces stay in sync instead of drifting.
+    async def set_active_power_profile(self, name):
+        await asyncio.to_thread(set_active_profile, name)
+        return await self.get_config()
+
+    # Polled separately from get_config -- see hooks/useActivePowerProfile.
+    async def get_active_power_profile(self):
+        return await asyncio.to_thread(read_active_profile)
 
     async def save_tweaks(self, data):
         await asyncio.to_thread(save_tweaks, data)
@@ -93,6 +114,19 @@ class Plugin:
     async def set_rgb(self, enabled, color, brightness, effect="static", speed=100):
         return await asyncio.to_thread(set_rgb, enabled, color, brightness, effect, speed)
 
+    # armada#23: orthogonal toggle, dedicated command -- not part of set_rgb.
+    async def set_rgb_sync_brightness(self, enabled):
+        return await asyncio.to_thread(set_rgb_sync_brightness, enabled)
+
+    # armada#26: opt-in gate for the suspend hook's charge-indicator pin --
+    # not part of armada-rgb's own config, see fan_curves-style immediate
+    # toggles.
+    async def get_rgb_charge_indicator_enabled(self):
+        return await asyncio.to_thread(get_rgb_charge_indicator_enabled)
+
+    async def set_rgb_charge_indicator_enabled(self, enabled):
+        return await asyncio.to_thread(set_rgb_charge_indicator_enabled, enabled)
+
     async def get_controller_state(self):
         return await asyncio.to_thread(controller_state)
 
@@ -113,6 +147,12 @@ class Plugin:
 
     async def save_fan_curves(self, fan_curves, fan_settings):
         return await asyncio.to_thread(save_fan_curves, fan_curves, fan_settings)
+
+    # armada#29: opt-in toggle for armada-powerd's battery-temperature fan
+    # floor (armada#6) -- applies immediately, independent of the curve
+    # editor's dirty/Save flow.
+    async def set_battery_fan_enabled(self, enabled):
+        return await asyncio.to_thread(set_battery_fan_enabled, enabled)
 
     # Polled separately from get_fans_state -- see hooks/useCurrentTemp.
     async def get_current_temp(self):

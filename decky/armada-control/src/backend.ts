@@ -5,6 +5,8 @@ export const getConfig = () => call<[], Config>("get_config");
 export const getInstalledGames = () => call<[], InstalledGame[]>("get_installed_games");
 export const getCompatMappedAppids = (tool: string) => call<[string], string[]>("get_compat_mapped_appids", tool);
 export const savePowerConfig = (data: PowerConfig) => call<[PowerConfig], Config>("save_power_config", data);
+export const setActivePowerProfile = (name: string) => call<[string], Config>("set_active_power_profile", name);
+export const getActivePowerProfile = () => call<[], string>("get_active_power_profile");
 export const saveTweaks = (data: Tweaks) => call<[Tweaks], Config>("save_tweaks", data);
 export const getCompatApplied = () => call<[], CompatAppliedState>("get_compat_applied");
 let compatAppliedSaveChain = Promise.resolve<unknown>(undefined);
@@ -30,6 +32,12 @@ export const setControllerType = (value: string) => call<[string], string>("set_
 export const getRgb = () => call<[], RgbConfig | null>("get_rgb");
 export const setRgb = (enabled: boolean, color: string, brightness: number, effect: RgbEffect, speed: number) =>
   call<[boolean, string, number, string, number], RgbConfig>("set_rgb", enabled, color, brightness, effect, speed);
+// armada#23: orthogonal toggle, dedicated command -- not part of setRgb.
+export const setRgbSyncBrightness = (enabled: boolean) => call<[boolean], RgbConfig>("set_rgb_sync_brightness", enabled);
+// armada#26: opt-in gate for the suspend hook's charge-indicator pin.
+export const getRgbChargeIndicatorEnabled = () => call<[], { enabled: boolean }>("get_rgb_charge_indicator_enabled");
+export const setRgbChargeIndicatorEnabled = (enabled: boolean) =>
+  call<[boolean], { enabled: boolean }>("set_rgb_charge_indicator_enabled", enabled);
 export const getControllerState = () => call<[], CalibrationState>("get_controller_state");
 export const saveCalibration = (capture: Capture) => call<[Capture], CalibrationState>("save_calibration", capture);
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");
@@ -39,3 +47,4 @@ export const getFansState = () => call<[], CurvesState>("get_fans_state");
 export const saveFanCurves = (fanCurves: Record<string, FanCurve>, fanSettings: FanSettings) =>
   call<[Record<string, FanCurve>, FanSettings], CurvesState>("save_fan_curves", fanCurves, fanSettings);
 export const getCurrentTemp = () => call<[], number | null>("get_current_temp");
+export const setBatteryFanEnabled = (enabled: boolean) => call<[boolean], CurvesState>("set_battery_fan_enabled", enabled);

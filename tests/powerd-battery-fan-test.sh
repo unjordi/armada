@@ -19,6 +19,17 @@ grep -Fq 'target = max(target, self.battery_target_pwm())' \
     exit 1
 }
 
+# armada#29: the Reload D-Bus method (what Armada Control's battery-fan
+# toggle triggers via action_write_config's "armada-power reload") must
+# re-read [battery_fan], not just __init__ -- otherwise flipping the toggle
+# in the UI silently does nothing until the daemon is restarted.
+awk '/if method == "Reload":/,/if method == "Suspend":/' \
+    "$ROOT/system_files/usr/libexec/armada/armada-powerd" \
+    | grep -Fq 'self.load_battery_fan_config()' || {
+    printf 'FAIL: Reload no longer re-reads [battery_fan] -- the UI toggle would need a daemon restart to take effect\n' >&2
+    exit 1
+}
+
 # The factory config must ship the [battery_fan] section enabled.
 grep -Fq '[battery_fan]' "$ROOT/system_files/usr/share/armada/power-profiles.conf" || {
     printf 'FAIL: factory power-profiles.conf lost the [battery_fan] section\n' >&2
