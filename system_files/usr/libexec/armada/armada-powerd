@@ -27,6 +27,15 @@ STATE_FILE = Path("/var/lib/armada/powerd.state")
 FACTORY_CONFIG_FILE = Path("/usr/share/armada/power-profiles.conf")
 CONFIG_FILE = Path("/etc/armada/power-profiles.conf")
 FAN_SAFE_PWM = 128
+# Fan floor by BATTERY temperature (with a boost while charging).
+# armada-powerd's CPU/GPU curve (discover_temps only samples cpu/gpu/video/mem)
+# ignores the battery, which turbo charging heats. This adds a floor by battery
+# temperature ON TOP of the CPU/GPU curve while awake: target = max(cpu_gpu, batt).
+# armada-powerd stays the SOLE owner of the fan knob (no second daemon fighting for
+# pwm1). Curve/boost live in the [battery_fan] section of power-profiles.conf; when
+# the section is absent or enabled=0 this is INERT (stock behaviour).
+BATTERY_TEMP_PATH = Path("/sys/class/power_supply/battery/temp")      # deci-Celsius
+BATTERY_STATUS_PATH = Path("/sys/class/power_supply/battery/status")  # Charging/Discharging/...
 
 
 def normalize_profile(profile):
@@ -189,6 +198,9 @@ class ArmadaPower:
         self.manual_gpu_clock = 0
         self.smoothed_temp = 0.0
         self.last_pwm = 0
+        self.battery_curve = []            # fan floor by battery temp (temp,pwm) pairs
+        self.battery_charging_boost = 0
+        self.battery_enabled = False
         self.suspended = False
         self.suspend_save = {}
         self.connection = None
@@ -197,6 +209,7 @@ class ArmadaPower:
         self.scx_failed = None
         self.scx_warned = set()
         self.load_config()
+        self.load_battery_fan_config()     # fan floor by battery temp
         self.profile = self.default_profile
         self.discover()
         self.apply_underclock_refs()
@@ -502,6 +515,62 @@ class ArmadaPower:
                 control.append(temp)
         return control
 
+    # --- Fan floor by BATTERY temperature ---------------------------------------
+    def load_battery_fan_config(self):
+        """Read [battery_fan] from FACTORY + user override. Inert if absent or enabled=0."""
+        self.battery_curve = []
+        self.battery_charging_boost = 0
+        self.battery_enabled = False
+        parser = configparser.ConfigParser()
+        files = [str(FACTORY_CONFIG_FILE)]
+        if CONFIG_FILE.exists():
+            files.append(str(CONFIG_FILE))
+        try:
+            parser.read(files)
+            if not parser.has_section("battery_fan"):
+                return
+            if not parser.getboolean("battery_fan", "enabled", fallback=True):
+                return
+            curve = parse_fan_curve(parser.get("battery_fan", "curve", fallback=""))
+            if not curve:
+                return
+            self.battery_curve = sorted(curve)   # ascending by temperature
+            self.battery_charging_boost = clamp(
+                parser.getint("battery_fan", "charging_boost", fallback=0), 0, 255)
+            self.battery_enabled = True
+        except Exception as exc:
+            print(f"armada-powerd: [battery_fan] invalid, ignored: {exc}", file=sys.stderr)
+
+    def read_battery_temp(self):
+        value = read_text(BATTERY_TEMP_PATH)          # deci-Celsius
+        return int(value) // 10 if value.lstrip("-").isdigit() else None
+
+    def battery_charging(self):
+        return read_text(BATTERY_STATUS_PATH) == "Charging"
+
+    def battery_target_pwm(self):
+        """Fan floor (0..max) from battery temp + boost while charging. 0 if off/cool."""
+        if not self.battery_enabled or not self.battery_curve:
+            return 0
+        temp = self.read_battery_temp()
+        if temp is None:
+            return 0
+        curve = self.battery_curve
+        if temp <= curve[0][0]:
+            pwm = curve[0][1]
+        elif temp >= curve[-1][0]:
+            pwm = curve[-1][1]
+        else:
+            pwm = curve[-1][1]
+            for (lt, lp), (ht, hp) in zip(curve, curve[1:]):
+                if lt <= temp <= ht:
+                    span = ht - lt
+                    pwm = hp if not span else lp + (hp - lp) * (temp - lt) / span
+                    break
+        if pwm > 0 and self.battery_charging():
+            pwm += self.battery_charging_boost
+        return self.quantize_pwm(pwm) if pwm > 0 else 0
+
     def load_state(self):
         if not STATE_FILE.exists():
             return
@@ -774,6 +843,9 @@ class ArmadaPower:
                     target = self.target_pwm(int(self.smoothed_temp))
                 else:
                     target = FAN_SAFE_PWM
+                # Floor by battery temperature ON TOP of the CPU/GPU curve, reusing the
+                # same ramp/smoothing below so there is no cycling ("prende y apaga").
+                target = max(target, self.battery_target_pwm())
                 if target > self.last_pwm:
                     next_pwm = min(target, self.last_pwm + self.fan_config["ramp_up"])
                 else:
