@@ -171,4 +171,9 @@ export interface CurvesState {
   activeProfile: string;
   // Live marker instead polls get_current_temp (see hooks/useCurrentTemp).
   currentTemp: number | null;
+  // armada#29: opt-in gate for armada-powerd's battery-temperature fan
+  // floor (armada#6). The curve/boost stay factory-only -- this only turns
+  // the whole behaviour on/off, applies immediately (not part of the
+  // curve editor's dirty/Save flow).
+  batteryFanEnabled: boolean;
 }

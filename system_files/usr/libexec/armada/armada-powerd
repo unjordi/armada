@@ -988,6 +988,10 @@ class ArmadaPower:
         if method == "Reload":
             try:
                 self.load_config()
+                # armada#29: without this, toggling the battery-fan-floor
+                # checkbox in Armada Control only took effect after the next
+                # daemon restart -- __init__ called it, Reload never did.
+                self.load_battery_fan_config()
                 self.discover()
                 self.apply_underclock_refs()
                 self.apply_profile()

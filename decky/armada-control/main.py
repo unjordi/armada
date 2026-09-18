@@ -25,7 +25,11 @@ from armada_control.system import (
     set_ssh_enabled,
 )
 from armada_control.tweaks import load_compat_applied, save_compat_applied, save_tweaks
-from armada_control.fan_curves import get_state as get_fans_state, save_all as save_fan_curves
+from armada_control.fan_curves import (
+    get_state as get_fans_state,
+    save_all as save_fan_curves,
+    set_battery_fan_enabled,
+)
 from armada_control.fan_sensors import get_current_temp
 
 
@@ -124,6 +128,12 @@ class Plugin:
 
     async def save_fan_curves(self, fan_curves, fan_settings):
         return await asyncio.to_thread(save_fan_curves, fan_curves, fan_settings)
+
+    # armada#29: opt-in toggle for armada-powerd's battery-temperature fan
+    # floor (armada#6) -- applies immediately, independent of the curve
+    # editor's dirty/Save flow.
+    async def set_battery_fan_enabled(self, enabled):
+        return await asyncio.to_thread(set_battery_fan_enabled, enabled)
 
     # Polled separately from get_fans_state -- see hooks/useCurrentTemp.
     async def get_current_temp(self):

@@ -1,10 +1,12 @@
+import { toaster } from "@decky/api";
 import { ButtonItem, Field, PanelSection, PanelSectionRow, showModal } from "@decky/ui";
 import { useCallback, useEffect, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import { getFansState, saveFanCurves } from "../backend";
+import { getFansState, saveFanCurves, setBatteryFanEnabled } from "../backend";
 import { CreateCurveModal } from "../components/CreateCurveModal";
 import { FanCurveEditor } from "../components/FanCurveEditor";
 import { FanCurveEditorModal } from "../components/FanCurveEditorModal";
+import { ToggleRow } from "../components/widgets";
 import { useCurrentTemp } from "../hooks/useCurrentTemp";
 import { useFanCurvesSave } from "../hooks/useFanCurvesSave";
 import { friendlyError } from "../lib/errors";
@@ -51,6 +53,25 @@ export function Fans({ setConfig }: {
     onSaved: syncSharedFanCurves,
   });
 
+  // armada#29: applies immediately (like the Settings tab's toggles), not
+  // part of the curve editor's dirty/Save flow -- it's a separate on/off
+  // gate for armada-powerd's own baked-in battery floor, not a curve edit.
+  const [batteryFanUpdating, setBatteryFanUpdating] = useState(false);
+  const toggleBatteryFan = async (enabled: boolean) => {
+    setDraft((current) => (current ? { ...current, batteryFanEnabled: enabled } : current));
+    setBatteryFanUpdating(true);
+    try {
+      const next = await setBatteryFanEnabled(enabled);
+      setSaved(next);
+      setDraft((current) => (current ? { ...current, batteryFanEnabled: next.batteryFanEnabled } : current));
+    } catch (error) {
+      setDraft((current) => (current ? { ...current, batteryFanEnabled: !enabled } : current));
+      toaster.toast({ title: "Could not change battery fan floor", body: friendlyError(error) });
+    } finally {
+      setBatteryFanUpdating(false);
+    }
+  };
+
   if (!draft) {
     return (
       <PanelSection title="Armada Fans">
@@ -95,6 +116,15 @@ export function Fans({ setConfig }: {
         onOpenCreateCurve={openCreateCurve}
         currentTemp={currentTemp}
       />
+      <PanelSection title="BATTERY FAN FLOOR">
+        <ToggleRow
+          label="Floor the fan by battery temperature"
+          description="Keeps the fan running (with a boost while charging) even if CPU/GPU are cool, so a hot battery under fast charging still gets airflow. Off restores the stock behaviour."
+          value={draft.batteryFanEnabled}
+          disabled={batteryFanUpdating}
+          onChange={toggleBatteryFan}
+        />
+      </PanelSection>
       <PanelSection title="SAVE">
         <PanelSectionRow>
           <div className="afc-control-inset">
