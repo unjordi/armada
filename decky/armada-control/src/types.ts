@@ -71,11 +71,20 @@ export interface CalibrationState {
   params?: Record<string, number>;
 }
 
-// "screen_sync" (armada#27, ambilight-style) is an ASSUMED addition to the
-// armada-rgb CLI contract -- no contract doc existed from the kernel/CLI
-// side as of 2026-09-18. Verify against
-// .claude/projects/rp6-rgb-cli-contract-2026-09-18.md once it exists.
-export type RgbEffect = "static" | "breathing" | "color_cycle" | "rainbow" | "load" | "battery" | "screen_sync";
+// Matches the armada-rgb CLI contract
+// (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md): backlight_sync
+// (armada#23) and screen_sync (armada#27) are effects, both self-contained
+// (no flags of their own -- backlight_sync scales brightness to the panel
+// backlight, screen_sync is per-side ambilight off gamescope screenshots).
+export type RgbEffect =
+  | "static"
+  | "breathing"
+  | "color_cycle"
+  | "rainbow"
+  | "load"
+  | "battery"
+  | "backlight_sync"
+  | "screen_sync";
 
 export interface RgbConfig {
   version: number;
@@ -85,9 +94,6 @@ export interface RgbConfig {
   // Omitted by armada-rgb when at their defaults (static / 100).
   effect?: RgbEffect;
   speed?: number;
-  // armada#23, ASSUMED addition: dims/brightens the LEDs to track the panel
-  // backlight regardless of effect. See the RgbEffect note above.
-  syncBrightness?: boolean;
 }
 
 export interface GameRef {

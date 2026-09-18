@@ -116,7 +116,6 @@ assert calls.pop() == (
         "brightness": 50,
         "effect": "static",
         "speed": 100,
-        "sync_brightness": None,
     },
 )
 rgb.set_rgb(True, "112233", 50, "breathing", 200)
@@ -128,60 +127,38 @@ assert calls.pop() == (
         "brightness": 50,
         "effect": "breathing",
         "speed": 200,
-        "sync_brightness": None,
-    },
-)
-rgb.set_rgb(True, "112233", 50, "screen_sync", 100, True)
-assert calls.pop() == (
-    "set_rgb",
-    {
-        "enabled": True,
-        "color": "112233",
-        "brightness": 50,
-        "effect": "screen_sync",
-        "speed": 100,
-        "sync_brightness": True,
     },
 )
 
-# armada#23/#27: ASSUMED CLI flag -- --sync-brightness / screen_sync effect
-# name. Verify against the real armada-rgb CLI contract once it exists and
-# update both action_set_rgb (above) and this test together.
-state = control.action_set_rgb(
-    {"enabled": True, "color": "a1b2c3", "brightness": 40, "sync_brightness": True}
-)
-assert commands.pop() == [
-    control.RGB_TOOL,
-    "set",
-    "--color",
-    "a1b2c3",
-    "--brightness",
-    "40",
-    "--sync-brightness",
-]
+# armada#23/#27: matches the real armada-rgb CLI contract
+# (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md) -- backlight_sync
+# and screen_sync are plain --effect values with no flags of their own.
+assert {"backlight_sync", "screen_sync"} <= set(control.RGB_EFFECTS)
+assert set(control.RGB_EFFECTS) == {
+    "static", "breathing", "color_cycle", "rainbow", "load", "battery",
+    "backlight_sync", "screen_sync",
+}
 
-state = control.action_set_rgb(
-    {"enabled": True, "color": "a1b2c3", "brightness": 40, "effect": "screen_sync"}
-)
-assert commands.pop() == [
-    control.RGB_TOOL,
-    "set",
-    "--color",
-    "a1b2c3",
-    "--brightness",
-    "40",
-    "--effect",
-    "screen_sync",
-]
-
-try:
+for effect in ("backlight_sync", "screen_sync"):
     control.action_set_rgb(
-        {"enabled": True, "color": "a1b2c3", "brightness": 40, "sync_brightness": "yes"}
+        {"enabled": True, "color": "a1b2c3", "brightness": 40, "effect": effect}
     )
-except ValueError:
-    pass
-else:
-    raise AssertionError("non-bool sync_brightness was accepted")
+    assert commands.pop() == [
+        control.RGB_TOOL,
+        "set",
+        "--color",
+        "a1b2c3",
+        "--brightness",
+        "40",
+        "--effect",
+        effect,
+    ]
+
+# armada#26: a dedicated CLI command, not a UI-facing action -- only the
+# suspend hook (rgb-suspend-charging-hook-test.sh) calls it, this UI never
+# exposes a "charge indicator" button (per the contract).
+assert "charge_indicator" not in control.ACTIONS
+assert "set_charge_indicator" not in control.ACTIONS
 
 # run_rgb error handling: a Python exception must never reach the UI as
 # opaque text (2026-09-18 QA: armada-rgb.service crash-looping surfaced as

@@ -21,10 +21,10 @@ SOCKET = Path("/run/armada/control.sock")
 SESSION_SOCKET = Path(armada_perf.SESSION_SOCKET)
 ABL_VERSION_TOOL = "/usr/lib/armada/abl-version"
 RGB_TOOL = "/usr/bin/armada-rgb"
-# "screen_sync" (armada#27, ambilight-style) is an ASSUMED addition -- see the
-# note above action_set_rgb. Verify the exact effect name armada-rgb expects
-# once the CLI contract lands.
-RGB_EFFECTS = ("static", "breathing", "color_cycle", "rainbow", "load", "battery", "screen_sync")
+# Matches the armada-rgb CLI contract (.claude/projects/rp6-rgb-cli-contract-
+# 2026-09-18.md): backlight_sync (armada#23) and screen_sync (armada#27) are
+# effects, not flags -- both self-contained, no flags of their own.
+RGB_EFFECTS = ("static", "breathing", "color_cycle", "rainbow", "load", "battery", "backlight_sync", "screen_sync")
 RGB_SPEED_MIN = 1
 RGB_SPEED_MAX = 1000
 ABL_CONFIG = Path("/etc/armada/abl.conf")
@@ -609,18 +609,6 @@ def action_set_rgb(request):
         if not valid_speed:
             raise ValueError("invalid RGB speed")
         command += ["--speed", str(speed)]
-
-    # ASSUMED armada-rgb CLI contract (armada#23, screen-brightness-synced
-    # lighting) -- no contract doc existed yet from the kernel/CLI side as of
-    # 2026-09-18. `--sync-brightness` is a guess at the flag name; verify
-    # against .claude/projects/rp6-rgb-cli-contract-2026-09-18.md once it
-    # exists and rename here (single call site) if it differs.
-    sync_brightness = request.get("sync_brightness")
-    if sync_brightness is not None:
-        if not isinstance(sync_brightness, bool):
-            raise ValueError("invalid RGB sync_brightness")
-        if sync_brightness:
-            command += ["--sync-brightness"]
 
     return run_rgb(command)
 

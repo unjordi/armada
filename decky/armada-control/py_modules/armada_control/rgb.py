@@ -12,7 +12,7 @@ def get_rgb():
     return call("get_rgb")
 
 
-def set_rgb(enabled, color, brightness, effect="static", speed=100, sync_brightness=None):
+def set_rgb(enabled, color, brightness, effect="static", speed=100):
     return call(
         "set_rgb",
         enabled=enabled,
@@ -20,5 +20,4 @@ def set_rgb(enabled, color, brightness, effect="static", speed=100, sync_brightn
         brightness=brightness,
         effect=effect,
         speed=speed,
-        sync_brightness=sync_brightness,
     )

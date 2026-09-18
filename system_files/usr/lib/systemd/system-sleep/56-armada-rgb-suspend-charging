@@ -1,23 +1,27 @@
 #!/bin/bash
-# Paint the "charging" RGB pattern right before suspending while plugged in,
-# so the HTR3212 stick-LED controllers keep showing it autonomously through
-# deep suspend -- the AP goes down (PSCI_SYSTEM_SUSPEND) but the chips retain
-# whatever pattern was last written, no CPU needed (see rp6-perfil.md's LEDs
-# section: a pattern written weeks earlier outlived reboots the same way).
-# armada#26.
+# Pin the "charging" RGB pattern via armada-rgb's dedicated charge-indicator
+# command right before suspending while plugged in, so the HTR3212 stick-LED
+# controllers keep showing it autonomously through deep suspend -- the AP
+# goes down (PSCI_SYSTEM_SUSPEND) but the chips retain whatever was last
+# written, no CPU needed. On resume, unpins it so armada-rgb goes back to
+# the user's own configured lighting immediately. armada#26.
+#
+# charge-indicator (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md) is
+# a DEDICATED command for exactly this: it paints direct to hardware (works
+# even before the `run` daemon is up), never touches /etc/armada/rgb.json
+# (the user's config stays intact), and its `off` restores the saved config
+# immediately rather than waiting for the daemon's next tick.
 #
 # This never blocks or delays suspend: it's a no-op if armada-rgb isn't
-# present/supported (older RPM pin, desktop dev box, RGB disabled by the
-# user's own config) or if a call to it fails -- lighting is cosmetic, never
-# a reason to abort going to sleep.
+# present/supported (older RPM pin, desktop dev box, RGB disabled) or if a
+# call to it fails -- lighting is cosmetic, never a reason to abort sleep.
 set -uo pipefail
 
 rgb_tool=${ARMADA_RGB_TOOL:-/usr/bin/armada-rgb}
-# ASSUMED effect name -- armada-rgb already ships a "battery" effect meant
-# for exactly this (paint according to charge state); verify against the CLI
-# contract once .claude/projects/rp6-rgb-cli-contract-2026-09-18.md exists.
-charge_color=${ARMADA_RGB_SUSPEND_CHARGE_COLOR:-00FF00}
-charge_brightness=${ARMADA_RGB_SUSPEND_CHARGE_BRIGHTNESS:-40}
+# Defaults match charge-indicator's own default (amber, dim) -- kept
+# overridable for consistency with the rest of this hook's knobs.
+charge_color=${ARMADA_RGB_SUSPEND_CHARGE_COLOR:-FFA500}
+charge_brightness=${ARMADA_RGB_SUSPEND_CHARGE_BRIGHTNESS:-15}
 sysfs_root=${ARMADA_SYSFS_ROOT:-/sys}
 
 [[ "${2:-}" == suspend ]] || exit 0
@@ -37,13 +41,13 @@ battery_charging() {
 case "${1:-}" in
     pre)
         battery_charging || exit 0
-        "$rgb_tool" set --effect battery --color "$charge_color" --brightness "$charge_brightness" >/dev/null 2>&1 || true
+        "$rgb_tool" charge-indicator on --color "$charge_color" --brightness "$charge_brightness" >/dev/null 2>&1 || true
         ;;
     post)
-        # The HW sustained the pattern through suspend with the AP down; once
-        # armada-rgb.service (After=armada-device-quirks.service) is back up
-        # it re-asserts the user's own configured state on its own -- nothing
-        # to reassert here, and guessing would fight it.
+        # Safe even if "on" was never called this sleep (nothing to unpin) --
+        # restores the user's saved lighting right away instead of waiting
+        # for the run daemon's next tick.
+        "$rgb_tool" charge-indicator off >/dev/null 2>&1 || true
         ;;
 esac
 exit 0

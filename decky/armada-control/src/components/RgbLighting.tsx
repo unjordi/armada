@@ -8,9 +8,8 @@ import { SelectEdit, SliderEdit, ToggleRow } from "./widgets";
 
 const UPDATE_INTERVAL_MS: number = 100;
 
-// "Screen Sync" (armada#27, ambilight-style) is an ASSUMED addition -- see
-// the RgbEffect note in ../types.ts. Verify the effect name once the
-// armada-rgb CLI contract exists.
+// Matches the armada-rgb CLI contract
+// (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md).
 const EFFECT_OPTIONS: { data: RgbEffect; label: string }[] = [
   { data: "static", label: "Static" },
   { data: "breathing", label: "Breathing" },
@@ -18,12 +17,17 @@ const EFFECT_OPTIONS: { data: RgbEffect; label: string }[] = [
   { data: "rainbow", label: "Rainbow" },
   { data: "load", label: "CPU Load" },
   { data: "battery", label: "Battery" },
+  { data: "backlight_sync", label: "Sync w/ screen brightness" },
   { data: "screen_sync", label: "Screen Sync (Ambilight)" },
 ];
 
-// Effects that paint the configured base color (the rest derive their own hue).
-const USES_BASE_COLOR: readonly RgbEffect[] = ["static", "breathing"];
-// Effects whose motion the speed slider controls (state-driven ones set their own cadence).
+// Effects that paint the configured base color (the rest derive their own
+// hue). backlight_sync scales the configured brightness to the panel
+// backlight but still uses the configured COLOR (per the contract).
+const USES_BASE_COLOR: readonly RgbEffect[] = ["static", "breathing", "backlight_sync"];
+// Effects whose motion the speed slider controls (state-driven ones set
+// their own cadence; the contract says --speed is ignored by
+// backlight_sync/screen_sync).
 const USES_SPEED: readonly RgbEffect[] = ["breathing", "color_cycle", "rainbow"];
 
 function colorHue(color: string): number {
@@ -99,7 +103,6 @@ export function RgbLighting() {
           config.brightness,
           config.effect ?? "static",
           config.speed ?? 100,
-          config.syncBrightness,
         );
         savedConfig.current = current;
       } catch (error) {
@@ -162,14 +165,6 @@ export function RgbLighting() {
         showValue={false}
         wrapperClassName="armada-slider-field armada-rgb-hue"
         onChange={(hue: number) => setConfig({ ...config, color: hueColor(hue) })}
-      />
-      {/* armada#23, ASSUMED contract -- see the RgbConfig.syncBrightness note in ../types.ts. */}
-      <ToggleRow
-        label="Sync brightness with screen"
-        description="Dims or brightens the lighting to track the panel backlight, regardless of effect."
-        value={!!config.syncBrightness}
-        disabled={!config.enabled}
-        onChange={(syncBrightness: boolean) => setConfig({ ...config, syncBrightness })}
       />
     </PanelSection>
   );
