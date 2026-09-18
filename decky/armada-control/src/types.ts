@@ -71,11 +71,16 @@ export interface CalibrationState {
   params?: Record<string, number>;
 }
 
+export type RgbEffect = "static" | "breathing" | "color_cycle" | "rainbow" | "load" | "battery";
+
 export interface RgbConfig {
   version: number;
   enabled: boolean;
   brightness: number;
   color: string;
+  // Omitted by armada-rgb when at their defaults (static / 100).
+  effect?: RgbEffect;
+  speed?: number;
 }
 
 export interface GameRef {

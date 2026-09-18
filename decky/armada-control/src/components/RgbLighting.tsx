@@ -2,10 +2,24 @@ import { toaster } from "@decky/api";
 import { PanelSection } from "@decky/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getRgb, setRgb } from "../backend";
-import type { RgbConfig } from "../types";
-import { SliderEdit, ToggleRow } from "./widgets";
+import type { RgbConfig, RgbEffect } from "../types";
+import { SelectEdit, SliderEdit, ToggleRow } from "./widgets";
 
 const UPDATE_INTERVAL_MS: number = 100;
+
+const EFFECT_OPTIONS: { data: RgbEffect; label: string }[] = [
+  { data: "static", label: "Static" },
+  { data: "breathing", label: "Breathing" },
+  { data: "color_cycle", label: "Color Cycle" },
+  { data: "rainbow", label: "Rainbow" },
+  { data: "load", label: "CPU Load" },
+  { data: "battery", label: "Battery" },
+];
+
+// Effects that paint the configured base color (the rest derive their own hue).
+const USES_BASE_COLOR: readonly RgbEffect[] = ["static", "breathing"];
+// Effects whose motion the speed slider controls (state-driven ones set their own cadence).
+const USES_SPEED: readonly RgbEffect[] = ["breathing", "color_cycle", "rainbow"];
 
 function colorHue(color: string): number {
   const red: number = Number.parseInt(color.slice(0, 2), 16) / 255;
@@ -74,7 +88,13 @@ export function RgbLighting() {
     const timer: number = window.setTimeout(async () => {
       lastUpdate.current = Date.now();
       try {
-        await setRgb(config.enabled, config.color, config.brightness);
+        await setRgb(
+          config.enabled,
+          config.color,
+          config.brightness,
+          config.effect ?? "static",
+          config.speed ?? 100,
+        );
         savedConfig.current = current;
       } catch (error) {
         toaster.toast({ title: "Could not change RGB lighting", body: String(error) });
@@ -87,12 +107,23 @@ export function RgbLighting() {
 
   if (!config) return null;
 
+  const effect: RgbEffect = config.effect ?? "static";
+  const speed: number = config.speed ?? 100;
+  const colorDisabled: boolean = !config.enabled || !USES_BASE_COLOR.includes(effect);
+
   return (
     <PanelSection title="RGB Lighting">
       <ToggleRow
         label="Enabled"
         value={config.enabled}
         onChange={(enabled: boolean) => setConfig({ ...config, enabled })}
+      />
+      <SelectEdit
+        label="Effect"
+        value={effect}
+        options={EFFECT_OPTIONS}
+        disabled={!config.enabled}
+        onChange={(next: RgbEffect) => setConfig({ ...config, effect: next })}
       />
       <SliderEdit
         label="Brightness"
@@ -103,13 +134,25 @@ export function RgbLighting() {
         disabled={!config.enabled}
         onChange={(brightness: number) => setConfig({ ...config, brightness })}
       />
+      {USES_SPEED.includes(effect) && (
+        <SliderEdit
+          label="Speed"
+          value={speed}
+          min={10}
+          max={400}
+          step={10}
+          disabled={!config.enabled}
+          format={(value: number) => `${value}%`}
+          onChange={(next: number) => setConfig({ ...config, speed: next })}
+        />
+      )}
       <SliderEdit
         label="Color"
         value={colorHue(config.color)}
         min={0}
         max={359}
         step={1}
-        disabled={!config.enabled}
+        disabled={colorDisabled}
         showValue={false}
         wrapperClassName="armada-slider-field armada-rgb-hue"
         onChange={(hue: number) => setConfig({ ...config, color: hueColor(hue) })}

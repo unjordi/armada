@@ -59,9 +59,34 @@ assert commands.pop() == [
 control.action_set_rgb({"enabled": False})
 assert commands.pop() == [control.RGB_TOOL, "off"]
 
+control.action_set_rgb(
+    {
+        "enabled": True,
+        "color": "a1b2c3",
+        "brightness": 40,
+        "effect": "rainbow",
+        "speed": 250,
+    }
+)
+assert commands.pop() == [
+    control.RGB_TOOL,
+    "set",
+    "--color",
+    "a1b2c3",
+    "--brightness",
+    "40",
+    "--effect",
+    "rainbow",
+    "--speed",
+    "250",
+]
+
 for request in (
     {"enabled": True, "color": "12345", "brightness": 40},
     {"enabled": True, "color": "FFFFFF", "brightness": 101},
+    {"enabled": True, "color": "FFFFFF", "brightness": 40, "effect": "sparkle"},
+    {"enabled": True, "color": "FFFFFF", "brightness": 40, "speed": 0},
+    {"enabled": True, "color": "FFFFFF", "brightness": 40, "speed": 1001},
 ):
     try:
         control.action_set_rgb(request)
@@ -85,14 +110,33 @@ assert calls.pop() == ("get_rgb", {})
 rgb.set_rgb(True, "112233", 50)
 assert calls.pop() == (
     "set_rgb",
-    {"enabled": True, "color": "112233", "brightness": 50},
+    {
+        "enabled": True,
+        "color": "112233",
+        "brightness": 50,
+        "effect": "static",
+        "speed": 100,
+    },
+)
+rgb.set_rgb(True, "112233", 50, "breathing", 200)
+assert calls.pop() == (
+    "set_rgb",
+    {
+        "enabled": True,
+        "color": "112233",
+        "brightness": 50,
+        "effect": "breathing",
+        "speed": 200,
+    },
 )
 PYEOF
 
 ! rg -q 'ARMADA_RGB_' "$ROOT/system_files/usr/lib/armada/devices"
 ! rg -q 'ARMADA_RGB_' "$ROOT/system_files/usr/libexec/armada/device-env"
-grep -Fq 'ConditionPathExists=/etc/armada/rgb.json' "$ROOT/system_files/usr/lib/systemd/system/armada-rgb.service"
-grep -Fq 'ExecStart=/usr/bin/armada-rgb apply' "$ROOT/system_files/usr/lib/systemd/system/armada-rgb.service"
+SERVICE="$ROOT/system_files/usr/lib/systemd/system/armada-rgb.service"
+! grep -Fq 'ConditionPathExists=/etc/armada/rgb.json' "$SERVICE"
+grep -Fq 'ExecStart=/usr/bin/armada-rgb run' "$SERVICE"
+grep -Fq 'ExecCondition=/usr/bin/armada-rgb supported' "$SERVICE"
 grep -Fq 'systemctl enable armada-rgb.service' "$ROOT/build_files/40-vendor-system-files.sh"
 
 printf 'Armada Control RGB tests passed\n'
