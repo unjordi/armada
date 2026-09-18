@@ -18,6 +18,14 @@ const UPDATE_INTERVAL_MS: number = 100;
 // (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md, corrected 2026-09-18
 // late). Brightness-sync (armada#23) is NOT in this list -- it's the
 // orthogonal toggle below, combinable with any of these.
+//
+// screen_sync (armada#27) is deliberately NOT selectable here (Jordi,
+// 2026-09-18): the current full-screenshot capture is too slow, so it's
+// deferred to the next build with an efficient capture path. The rest of
+// its plumbing (RgbEffect, RGB_EFFECTS, backend validation) stays as-is,
+// dormant -- not ripped out, just not offered in this dropdown. See the
+// EFFECTIVE_EFFECT fallback below for a config that already has it
+// persisted (Jordi was testing it before this change).
 const EFFECT_OPTIONS: { data: RgbEffect; label: string }[] = [
   { data: "static", label: "Static" },
   { data: "breathing", label: "Breathing" },
@@ -25,7 +33,6 @@ const EFFECT_OPTIONS: { data: RgbEffect; label: string }[] = [
   { data: "rainbow", label: "Rainbow" },
   { data: "load", label: "CPU Load" },
   { data: "battery", label: "Battery" },
-  { data: "screen_sync", label: "Screen Sync (Ambilight)" },
 ];
 
 // Effects that paint the configured base color (the rest derive their own hue).
@@ -174,7 +181,15 @@ export function RgbLighting() {
 
   if (!config) return null;
 
-  const effect: RgbEffect = config.effect ?? "static";
+  // Defensive fallback for a persisted effect that isn't offered in the
+  // dropdown right now (screen_sync, deferred -- see EFFECT_OPTIONS' note).
+  // Only affects what's DISPLAYED/enabled here; doesn't rewrite config.effect
+  // or send a set_rgb() call by itself -- that only happens if the user then
+  // actually touches the Effect dropdown.
+  const rawEffect: RgbEffect = config.effect ?? "static";
+  const effect: RgbEffect = EFFECT_OPTIONS.some((option) => option.data === rawEffect)
+    ? rawEffect
+    : "static";
   const speed: number = config.speed ?? 100;
   const syncBrightness: boolean = !!config.sync_brightness;
   const colorDisabled: boolean = !config.enabled || !USES_BASE_COLOR.includes(effect);
