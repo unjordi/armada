@@ -1,12 +1,14 @@
 [Unit]
-Description=Restore Armada RGB lighting
-ConditionPathExists=/etc/armada/rgb.json
+Description=Armada RGB lighting daemon
 After=armada-device-quirks.service
 Before=display-manager.service
 
 [Service]
-Type=oneshot
-ExecStart=/usr/bin/armada-rgb apply
+Type=simple
+ExecCondition=/usr/bin/armada-rgb supported
+ExecStart=/usr/bin/armada-rgb run
+Restart=on-failure
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

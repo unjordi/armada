@@ -21,6 +21,9 @@ SOCKET = Path("/run/armada/control.sock")
 SESSION_SOCKET = Path(armada_perf.SESSION_SOCKET)
 ABL_VERSION_TOOL = "/usr/lib/armada/abl-version"
 RGB_TOOL = "/usr/bin/armada-rgb"
+RGB_EFFECTS = ("static", "breathing", "color_cycle", "rainbow", "load", "battery")
+RGB_SPEED_MIN = 1
+RGB_SPEED_MAX = 1000
 ABL_CONFIG = Path("/etc/armada/abl.conf")
 ABL_MANIFEST = Path("/usr/lib/armada/abl/manifest")
 ABL_PARTITIONS = (
@@ -527,6 +530,24 @@ def action_set_rgb(request):
         raise ValueError("invalid RGB brightness")
 
     command = ["set", "--color", color, "--brightness", str(brightness)]
+
+    effect = request.get("effect")
+    if effect is not None:
+        if effect not in RGB_EFFECTS:
+            raise ValueError("invalid RGB effect")
+        command += ["--effect", effect]
+
+    speed = request.get("speed")
+    if speed is not None:
+        valid_speed = (
+            isinstance(speed, int)
+            and not isinstance(speed, bool)
+            and RGB_SPEED_MIN <= speed <= RGB_SPEED_MAX
+        )
+        if not valid_speed:
+            raise ValueError("invalid RGB speed")
+        command += ["--speed", str(speed)]
+
     return run_rgb(command)
 
 
