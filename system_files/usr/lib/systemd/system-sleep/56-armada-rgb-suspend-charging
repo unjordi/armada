@@ -1,0 +1,95 @@
+#!/bin/bash
+# Show charge status on the stick RGB LEDs while the device sleeps, autonomously
+# and through deep suspend -- INCLUDING lighting up when the charger is plugged
+# in while it is ALREADY asleep (armada#26), which is Jordi's real use ("I leave
+# it charging overnight"). Opt-in, default OFF (Armada Control -> RGB Lighting ->
+# "Show charge status while sleeping").
+#
+# Mechanism: hand the LEDs off to a KERNEL LED trigger for the duration of the
+# sleep, then take them back on resume. In the suspend `pre` step (when opted
+# in) we:
+#   1. set keep_alive on the HTR3212 controllers so they are NOT powered down
+#      in suspend (kernel patch armada#26) and keep driving their PWM pattern
+#      with no CPU -- their vdd rail is regulator-always-on;
+#   2. arm the kernel trigger "<psy>-charging-orange-full-green" on the
+#      multicolor group LEDs. From then on the KERNEL owns them: when the
+#      charger-attach doorbell is processed (even in a brief mid-sleep wake,
+#      no systemd, no userspace), power_supply_update_leds() repaints the LEDs
+#      amber (charging) / green (full) straight from the kernel workqueue.
+# We deliberately do NOT gate this on "already charging at suspend time" -- that
+# was the bug that stopped it painting when you plug in while asleep.
+#
+# On resume (`post`) we disarm the trigger and clear keep_alive so ordinary
+# suspends power the controllers down as before, then nudge armada-rgb to
+# repaint the user's own lighting immediately instead of waiting for the daemon
+# to notice (the daemon also reclaims any leftover trigger by itself).
+#
+# This never blocks or delays suspend: every step is best-effort and a no-op on
+# a device without these LED nodes / the htr3212 driver (older image, desktop
+# dev box) -- lighting is cosmetic, never a reason to abort sleep.
+set -uo pipefail
+
+sysfs_root=${ARMADA_SYSFS_ROOT:-/sys}
+rgb_tool=${ARMADA_RGB_TOOL:-/usr/bin/armada-rgb}
+# Owned by armada-control (its RGB_CHARGE_INDICATOR_CONFIG); read directly here
+# since this hook runs standalone via systemd, not through the plugin socket.
+indicator_config=${ARMADA_RGB_CHARGE_INDICATOR_CONFIG:-/etc/armada/rgb-charge-indicator.conf}
+# Battery power-supply name -> the LED trigger power_supply_leds.c registers for
+# it. qcom_battmgr exposes the pack as "battery" (confirm on-device: G1).
+psy=${ARMADA_RGB_CHARGE_PSY:-battery}
+trigger="${psy}-charging-orange-full-green"
+# Multicolor group nodes for the two HTR3212 stick controllers (rgb:l1..l4 /
+# rgb:r1..r4), and the keep_alive knob on each bound htr3212 controller.
+indicator_leds_glob=${ARMADA_RGB_INDICATOR_LEDS:-"$sysfs_root/class/leds/rgb:l? $sysfs_root/class/leds/rgb:r?"}
+keep_alive_glob=${ARMADA_RGB_KEEPALIVE:-"$sysfs_root/bus/i2c/drivers/htr3212/*/keep_alive"}
+
+[[ "${2:-}" == suspend ]] || exit 0
+
+# Opt-in, default OFF (matches armada-control's own fallback: an absent,
+# unreadable or malformed file means disabled).
+indicator_enabled() {
+    local key value
+    [[ -r "$indicator_config" ]] || return 1
+    while IFS='=' read -r key value; do
+        if [[ "$key" == "enabled" ]]; then
+            [[ "$value" == "1" ]] && return 0 || return 1
+        fi
+    done <"$indicator_config"
+    return 1
+}
+
+set_keep_alive() { # $1 = 0|1
+    local f
+    for f in $keep_alive_glob; do
+        [[ -w "$f" ]] || continue
+        echo "$1" >"$f" 2>/dev/null || true
+    done
+}
+
+set_trigger() { # $1 = trigger name, or "none"
+    local led
+    for led in $indicator_leds_glob; do
+        [[ -w "$led/trigger" ]] || continue
+        echo "$1" >"$led/trigger" 2>/dev/null || true
+    done
+}
+
+case "${1:-}" in
+    pre)
+        indicator_enabled || exit 0
+        # Keep the controllers alive first, THEN hand the LEDs to the kernel
+        # trigger, so the amber/green painted mid-sleep lands on a live chip.
+        set_keep_alive 1
+        set_trigger "$trigger"
+        ;;
+    post)
+        # Unconditional and idempotent: safe even if `pre` never armed anything.
+        set_trigger none
+        set_keep_alive 0
+        # Repaint the user's saved lighting right away (best-effort). `apply`
+        # exists on every armada-rgb build and itself reclaims any residual
+        # trigger before writing.
+        [[ -x "$rgb_tool" ]] && timeout 5 "$rgb_tool" apply >/dev/null 2>&1 || true
+        ;;
+esac
+exit 0
