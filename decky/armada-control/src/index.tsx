@@ -1,6 +1,7 @@
-import { definePlugin } from "@decky/api";
+import { definePlugin, routerHook } from "@decky/api";
 import { getCompatApplied, getConfig, getInstalledGames, saveCompatApplied } from "./backend";
 import { ActiveProfileBadge } from "./components/ActiveProfileBadge";
+import { TopBarProfileIndicator } from "./components/TopBarProfileIndicator";
 import { Content } from "./Content";
 import {
   configureCompatPolicy,
@@ -18,6 +19,12 @@ export default definePlugin(() => {
   const persistHandledGames = () => {
     saveCompatApplied(handledGameAppids()).catch(() => {});
   };
+  // armada#25 (Camino 1 — overlay): mount the live power-profile glyph in the
+  // system top bar (left of the battery %). addGlobalComponent is the only
+  // sanctioned global mount point; the component self-positions with
+  // position:fixed + useUIComposition(Notification) (decky-brightness-bar
+  // pattern). Removed in onDismount below.
+  routerHook.addGlobalComponent("ArmadaTopBarProfileIndicator", TopBarProfileIndicator);
   let cancelled = false;
   const handledRequest = getCompatApplied()
     .then((state) => ({ state, loaded: true }))
@@ -77,6 +84,7 @@ export default definePlugin(() => {
     onDismount() {
       cancelled = true;
       unregisterDownloadWatcher();
+      routerHook.removeGlobalComponent("ArmadaTopBarProfileIndicator");
     },
     icon: (
       <svg
