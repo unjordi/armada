@@ -1,10 +1,13 @@
 #!/bin/bash
 # Pin the "charging" RGB pattern via armada-rgb's dedicated charge-indicator
-# command right before suspending while plugged in, so the HTR3212 stick-LED
-# controllers keep showing it autonomously through deep suspend -- the AP
-# goes down (PSCI_SYSTEM_SUSPEND) but the chips retain whatever was last
-# written, no CPU needed. On resume, unpins it so armada-rgb goes back to
-# the user's own configured lighting immediately. armada#26.
+# command right before suspending while plugged in AND the user opted in
+# (Armada Control -> RGB Lighting -> "Show charge status while sleeping",
+# armada#26, default OFF), so the HTR3212 stick-LED controllers keep showing
+# it autonomously through deep suspend -- the AP goes down
+# (PSCI_SYSTEM_SUSPEND) but the chips retain whatever was last written, no
+# CPU needed. On resume, unpins it unconditionally so armada-rgb goes back
+# to the user's own configured lighting immediately, whether or not the
+# opt-in was on or "on" was ever called this sleep.
 #
 # charge-indicator (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md) is
 # a DEDICATED command for exactly this: it paints direct to hardware (works
@@ -23,6 +26,10 @@ rgb_tool=${ARMADA_RGB_TOOL:-/usr/bin/armada-rgb}
 charge_color=${ARMADA_RGB_SUSPEND_CHARGE_COLOR:-FFA500}
 charge_brightness=${ARMADA_RGB_SUSPEND_CHARGE_BRIGHTNESS:-15}
 sysfs_root=${ARMADA_SYSFS_ROOT:-/sys}
+# Owned by armada-control (system_files/usr/libexec/armada/armada-control's
+# RGB_CHARGE_INDICATOR_CONFIG); this hook reads it directly since it runs
+# standalone via systemd, not through the plugin's privileged socket.
+indicator_config=${ARMADA_RGB_CHARGE_INDICATOR_CONFIG:-/etc/armada/rgb-charge-indicator.conf}
 
 [[ "${2:-}" == suspend ]] || exit 0
 [[ -x "$rgb_tool" ]] || exit 0
@@ -38,13 +45,28 @@ battery_charging() {
     return 1
 }
 
+# Opt-in, default OFF (matches action_get_rgb_charge_indicator_enabled's own
+# fallback: an absent/unreadable/malformed file means disabled).
+indicator_enabled() {
+    local line key value
+    [[ -r "$indicator_config" ]] || return 1
+    while IFS='=' read -r key value; do
+        if [[ "$key" == "enabled" ]]; then
+            [[ "$value" == "1" ]] && return 0 || return 1
+        fi
+    done <"$indicator_config"
+    return 1
+}
+
 case "${1:-}" in
     pre)
         battery_charging || exit 0
+        indicator_enabled || exit 0
         "$rgb_tool" charge-indicator on --color "$charge_color" --brightness "$charge_brightness" >/dev/null 2>&1 || true
         ;;
     post)
-        # Safe even if "on" was never called this sleep (nothing to unpin) --
+        # Unconditional (per the opt-in toggle's own contract) -- safe even
+        # if "on" was never called this sleep (nothing to unpin), and
         # restores the user's saved lighting right away instead of waiting
         # for the run daemon's next tick.
         "$rgb_tool" charge-indicator off >/dev/null 2>&1 || true

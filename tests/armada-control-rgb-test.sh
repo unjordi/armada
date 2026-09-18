@@ -3,8 +3,10 @@
 set -euo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="$(mktemp -d)"
+trap 'rm -rf -- "$WORK"' EXIT
 
-python3 -B - "$ROOT" <<'PYEOF'
+python3 -B - "$ROOT" "$WORK" <<'PYEOF'
 import importlib.machinery
 import importlib.util
 from pathlib import Path
@@ -130,35 +132,83 @@ assert calls.pop() == (
     },
 )
 
-# armada#23/#27: matches the real armada-rgb CLI contract
-# (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md) -- backlight_sync
-# and screen_sync are plain --effect values with no flags of their own.
-assert {"backlight_sync", "screen_sync"} <= set(control.RGB_EFFECTS)
+rgb.set_rgb_sync_brightness(True)
+assert calls.pop() == ("set_rgb_sync_brightness", {"enabled": True})
+rgb.get_rgb_charge_indicator_enabled()
+assert calls.pop() == ("get_rgb_charge_indicator_enabled", {})
+rgb.set_rgb_charge_indicator_enabled(True)
+assert calls.pop() == ("set_rgb_charge_indicator_enabled", {"enabled": True})
+
+# armada#27: matches the real armada-rgb CLI contract
+# (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md, corrected 2026-09-18
+# late) -- screen_sync is a plain --effect value with no flags of its own.
+# armada#23 (brightness-sync) is explicitly NOT in this list -- see below.
+assert "screen_sync" in control.RGB_EFFECTS
 assert set(control.RGB_EFFECTS) == {
-    "static", "breathing", "color_cycle", "rainbow", "load", "battery",
-    "backlight_sync", "screen_sync",
+    "static", "breathing", "color_cycle", "rainbow", "load", "battery", "screen_sync",
 }
+assert "backlight_sync" not in control.RGB_EFFECTS
 
-for effect in ("backlight_sync", "screen_sync"):
-    control.action_set_rgb(
-        {"enabled": True, "color": "a1b2c3", "brightness": 40, "effect": effect}
-    )
-    assert commands.pop() == [
-        control.RGB_TOOL,
-        "set",
-        "--color",
-        "a1b2c3",
-        "--brightness",
-        "40",
-        "--effect",
-        effect,
-    ]
+control.action_set_rgb(
+    {"enabled": True, "color": "a1b2c3", "brightness": 40, "effect": "screen_sync"}
+)
+assert commands.pop() == [
+    control.RGB_TOOL,
+    "set",
+    "--color",
+    "a1b2c3",
+    "--brightness",
+    "40",
+    "--effect",
+    "screen_sync",
+]
 
-# armada#26: a dedicated CLI command, not a UI-facing action -- only the
-# suspend hook (rgb-suspend-charging-hook-test.sh) calls it, this UI never
-# exposes a "charge indicator" button (per the contract).
+# armada#23: an orthogonal toggle -- dedicated `sync-brightness on|off`
+# command, NOT an --effect value, NOT bundled into action_set_rgb's request.
+control.action_set_rgb_sync_brightness({"enabled": True})
+assert commands.pop() == [control.RGB_TOOL, "sync-brightness", "on"]
+control.action_set_rgb_sync_brightness({"enabled": False})
+assert commands.pop() == [control.RGB_TOOL, "sync-brightness", "off"]
+try:
+    control.action_set_rgb_sync_brightness({"enabled": "yes"})
+except ValueError:
+    pass
+else:
+    raise AssertionError("non-bool sync_brightness was accepted")
+
+# armada#26: charge-indicator itself is a dedicated CLI command, not a
+# UI-facing action -- only the suspend hook (rgb-suspend-charging-hook-
+# test.sh) calls it, this UI never exposes a "charge indicator" button (per
+# the contract). What the UI DOES own is the opt-in GATE the hook reads.
 assert "charge_indicator" not in control.ACTIONS
 assert "set_charge_indicator" not in control.ACTIONS
+
+indicator_config = Path(sys.argv[2]) / "rgb-charge-indicator.conf"
+control.RGB_CHARGE_INDICATOR_CONFIG = indicator_config
+assert control.action_get_rgb_charge_indicator_enabled({}) == {"enabled": False}, \
+    "opt-in must default OFF when the config file doesn't exist yet"
+
+assert control.action_set_rgb_charge_indicator_enabled({"enabled": True}) == {"enabled": True}
+assert control.action_get_rgb_charge_indicator_enabled({}) == {"enabled": True}
+assert indicator_config.read_text() == "enabled=1\n"
+
+assert control.action_set_rgb_charge_indicator_enabled({"enabled": False}) == {"enabled": False}
+assert control.action_get_rgb_charge_indicator_enabled({}) == {"enabled": False}
+assert indicator_config.read_text() == "enabled=0\n"
+
+try:
+    control.action_set_rgb_charge_indicator_enabled({"enabled": "yes"})
+except ValueError:
+    pass
+else:
+    raise AssertionError("non-bool charge indicator enabled state was accepted")
+
+for action in (
+    "set_rgb_sync_brightness",
+    "get_rgb_charge_indicator_enabled",
+    "set_rgb_charge_indicator_enabled",
+):
+    assert action in control.ACTIONS, f"{action} not registered in ACTIONS"
 
 # run_rgb error handling: a Python exception must never reach the UI as
 # opaque text (2026-09-18 QA: armada-rgb.service crash-looping surfaced as

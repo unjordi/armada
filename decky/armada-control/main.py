@@ -10,7 +10,13 @@ from armada_control.calibration import (
 from armada_control.config import build_config
 from armada_control.controller import set_controller_type
 from armada_control.power import read_active_profile, save_power_config, set_active_profile
-from armada_control.rgb import get_rgb, set_rgb
+from armada_control.rgb import (
+    get_rgb,
+    get_rgb_charge_indicator_enabled,
+    set_rgb,
+    set_rgb_charge_indicator_enabled,
+    set_rgb_sync_brightness,
+)
 from armada_control.steam import compat_mapped_appids, installed_games
 from armada_control.system import (
     bottom_screen_active,
@@ -107,6 +113,19 @@ class Plugin:
 
     async def set_rgb(self, enabled, color, brightness, effect="static", speed=100):
         return await asyncio.to_thread(set_rgb, enabled, color, brightness, effect, speed)
+
+    # armada#23: orthogonal toggle, dedicated command -- not part of set_rgb.
+    async def set_rgb_sync_brightness(self, enabled):
+        return await asyncio.to_thread(set_rgb_sync_brightness, enabled)
+
+    # armada#26: opt-in gate for the suspend hook's charge-indicator pin --
+    # not part of armada-rgb's own config, see fan_curves-style immediate
+    # toggles.
+    async def get_rgb_charge_indicator_enabled(self):
+        return await asyncio.to_thread(get_rgb_charge_indicator_enabled)
+
+    async def set_rgb_charge_indicator_enabled(self, enabled):
+        return await asyncio.to_thread(set_rgb_charge_indicator_enabled, enabled)
 
     async def get_controller_state(self):
         return await asyncio.to_thread(controller_state)

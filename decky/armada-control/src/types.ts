@@ -72,10 +72,11 @@ export interface CalibrationState {
 }
 
 // Matches the armada-rgb CLI contract
-// (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md): backlight_sync
-// (armada#23) and screen_sync (armada#27) are effects, both self-contained
-// (no flags of their own -- backlight_sync scales brightness to the panel
-// backlight, screen_sync is per-side ambilight off gamescope screenshots).
+// (.claude/projects/rp6-rgb-cli-contract-2026-09-18.md, corrected 2026-09-18
+// late): screen_sync (armada#27) is an effect (per-side ambilight off
+// gamescope screenshots). armada#23 (brightness-sync) is NOT an effect --
+// it's the orthogonal `syncBrightness` field below (dedicated
+// `sync-brightness on|off` command), combinable with any effect here.
 export type RgbEffect =
   | "static"
   | "breathing"
@@ -83,7 +84,6 @@ export type RgbEffect =
   | "rainbow"
   | "load"
   | "battery"
-  | "backlight_sync"
   | "screen_sync";
 
 export interface RgbConfig {
@@ -94,6 +94,11 @@ export interface RgbConfig {
   // Omitted by armada-rgb when at their defaults (static / 100).
   effect?: RgbEffect;
   speed?: number;
+  // armada#23: raw pass-through of armada-rgb's own JSON key (snake_case,
+  // matching every other RgbConfig field -- this object is never
+  // camelCased, it's armada-rgb's LightingConfig verbatim). Omitted when
+  // false/default.
+  sync_brightness?: boolean;
 }
 
 export interface GameRef {
