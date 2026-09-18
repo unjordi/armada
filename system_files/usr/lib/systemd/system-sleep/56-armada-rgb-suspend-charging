@@ -1,0 +1,49 @@
+#!/bin/bash
+# Paint the "charging" RGB pattern right before suspending while plugged in,
+# so the HTR3212 stick-LED controllers keep showing it autonomously through
+# deep suspend -- the AP goes down (PSCI_SYSTEM_SUSPEND) but the chips retain
+# whatever pattern was last written, no CPU needed (see rp6-perfil.md's LEDs
+# section: a pattern written weeks earlier outlived reboots the same way).
+# armada#26.
+#
+# This never blocks or delays suspend: it's a no-op if armada-rgb isn't
+# present/supported (older RPM pin, desktop dev box, RGB disabled by the
+# user's own config) or if a call to it fails -- lighting is cosmetic, never
+# a reason to abort going to sleep.
+set -uo pipefail
+
+rgb_tool=${ARMADA_RGB_TOOL:-/usr/bin/armada-rgb}
+# ASSUMED effect name -- armada-rgb already ships a "battery" effect meant
+# for exactly this (paint according to charge state); verify against the CLI
+# contract once .claude/projects/rp6-rgb-cli-contract-2026-09-18.md exists.
+charge_color=${ARMADA_RGB_SUSPEND_CHARGE_COLOR:-00FF00}
+charge_brightness=${ARMADA_RGB_SUSPEND_CHARGE_BRIGHTNESS:-40}
+sysfs_root=${ARMADA_SYSFS_ROOT:-/sys}
+
+[[ "${2:-}" == suspend ]] || exit 0
+[[ -x "$rgb_tool" ]] || exit 0
+"$rgb_tool" supported >/dev/null 2>&1 || exit 0
+
+battery_charging() {
+    local status
+    for status in "$sysfs_root"/class/power_supply/*/status; do
+        [[ -r "$status" ]] || continue
+        read -r s <"$status" 2>/dev/null || continue
+        [[ "$s" == Charging ]] && return 0
+    done
+    return 1
+}
+
+case "${1:-}" in
+    pre)
+        battery_charging || exit 0
+        "$rgb_tool" set --effect battery --color "$charge_color" --brightness "$charge_brightness" >/dev/null 2>&1 || true
+        ;;
+    post)
+        # The HW sustained the pattern through suspend with the AP down; once
+        # armada-rgb.service (After=armada-device-quirks.service) is back up
+        # it re-asserts the user's own configured state on its own -- nothing
+        # to reassert here, and guessing would fight it.
+        ;;
+esac
+exit 0

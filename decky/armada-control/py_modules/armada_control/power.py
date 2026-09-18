@@ -9,10 +9,52 @@ from .privileged import call
 POWER_CONFIG = Path("/etc/armada/power-profiles.conf")
 FACTORY_POWER_CONFIG = Path("/usr/share/armada/power-profiles.conf")
 PROFILES = ("eco", "balanced", "performance")
+# Profile armada-powerd is actually running right now -- may differ from the
+# [general] default_profile until a reload/reboot catches up. Same file
+# fan_curves.py reads for the Fans tab's "activeProfile" (kept as a separate
+# read here, matching this module's existing style of owning its own paths).
+STATE_FILE = Path("/var/lib/armada/powerd.state")
 
 
 def default_label(name):
     return name.replace("_", " ").title()
+
+
+def active_profile(profiles=None):
+    """The live profile armada-powerd is running, or None if it can't be read
+    (daemon not up yet, state file missing/corrupt). Callers decide the
+    fallback -- config.py falls back to [general] default_profile."""
+    names = profiles if profiles is not None else PROFILES
+    try:
+        for line in STATE_FILE.read_text(encoding="utf-8").splitlines():
+            if not line.startswith("profile="):
+                continue
+            value = line.split("=", 1)[1].strip()
+            if value in names:
+                return value
+    except OSError:
+        pass
+    return None
+
+
+def set_active_profile(name):
+    """Switch the LIVE profile now (org.armada.Power1 Profile, via
+    armada-power), independent of [general] default_profile. This is what
+    lets Armada Control's Power tab and Steam's native "Rendimiento" panel
+    activate the same thing instead of drifting (armada#24)."""
+    if name not in PROFILES:
+        raise ValueError("invalid power profile")
+    call("set_power_profile", profile=name)
+    return name
+
+
+def read_active_profile():
+    """Cheap, pollable "what's active" read for the Power tab's live status
+    line (src/hooks/useActivePowerProfile.ts) -- same fallback chain
+    config.py's build_config() uses, kept separate so polling it every few
+    seconds doesn't rebuild the whole plugin config each time."""
+    power = parse_power()
+    return active_profile(power["profiles"].keys()) or power["general"]["default_profile"]
 
 
 def restore_factory_power_config(reason):

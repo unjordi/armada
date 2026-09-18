@@ -9,7 +9,7 @@ from armada_control.calibration import (
 )
 from armada_control.config import build_config
 from armada_control.controller import set_controller_type
-from armada_control.power import save_power_config
+from armada_control.power import read_active_profile, save_power_config, set_active_profile
 from armada_control.rgb import get_rgb, set_rgb
 from armada_control.steam import compat_mapped_appids, installed_games
 from armada_control.system import (
@@ -43,6 +43,17 @@ class Plugin:
     async def save_power_config(self, data):
         await asyncio.to_thread(save_power_config, data)
         return await self.get_config()
+
+    # armada#24: switches the LIVE profile (org.armada.Power1 Profile), not
+    # just [general] default_profile -- same effect Steam's "Rendimiento"
+    # panel has, so both surfaces stay in sync instead of drifting.
+    async def set_active_power_profile(self, name):
+        await asyncio.to_thread(set_active_profile, name)
+        return await self.get_config()
+
+    # Polled separately from get_config -- see hooks/useActivePowerProfile.
+    async def get_active_power_profile(self):
+        return await asyncio.to_thread(read_active_profile)
 
     async def save_tweaks(self, data):
         await asyncio.to_thread(save_tweaks, data)
@@ -90,8 +101,8 @@ class Plugin:
     async def get_rgb(self):
         return await asyncio.to_thread(get_rgb)
 
-    async def set_rgb(self, enabled, color, brightness, effect="static", speed=100):
-        return await asyncio.to_thread(set_rgb, enabled, color, brightness, effect, speed)
+    async def set_rgb(self, enabled, color, brightness, effect="static", speed=100, sync_brightness=None):
+        return await asyncio.to_thread(set_rgb, enabled, color, brightness, effect, speed, sync_brightness)
 
     async def get_controller_state(self):
         return await asyncio.to_thread(controller_state)

@@ -7,6 +7,7 @@ import { FanCurveEditor } from "../components/FanCurveEditor";
 import { FanCurveEditorModal } from "../components/FanCurveEditorModal";
 import { useCurrentTemp } from "../hooks/useCurrentTemp";
 import { useFanCurvesSave } from "../hooks/useFanCurvesSave";
+import { friendlyError } from "../lib/errors";
 import { clone } from "../lib/util";
 import type { Config, CurvesState } from "../types";
 
@@ -28,7 +29,7 @@ export function Fans({ setConfig }: {
       const activeCurve = next.profiles?.[next.activeProfile]?.fan_curve;
       setSelectedCurve(activeCurve && names.includes(activeCurve) ? activeCurve : names[0] || "");
     } catch (error) {
-      setMessage(String(error));
+      setMessage(friendlyError(error, "Could not load fan curves"));
     }
   }, []);
   useEffect(() => {

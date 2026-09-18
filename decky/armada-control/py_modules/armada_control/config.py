@@ -1,5 +1,5 @@
 from .controller import CONTROLLER_TYPES, controller_type, inputplumber_targets
-from .power import factory_power_defaults, parse_power
+from .power import active_profile, factory_power_defaults, parse_power
 from .rgb import rgb_supported
 from .steam import installed_games
 from .system import (
@@ -24,9 +24,15 @@ def build_config(include_games=True):
     fex_contract = load_fex_contract()
     env = device_env()
     secondary_brightness = bottom_screen_brightness()
+    power = parse_power()
+    # armada#24: the profile ACTUALLY running (armada-powerd's live state),
+    # falling back to the configured default so the UI always has something
+    # to show even before armada-powerd writes its first state file.
+    live_profile = active_profile(power["profiles"].keys()) or power["general"]["default_profile"]
     return {
-        "power": parse_power(),
+        "power": power,
         "powerDefaults": factory_power_defaults(),
+        "activePowerProfile": live_profile,
         "tweaks": load_tweaks(),
         "installedGames": installed_games() if include_games else [],
         "fexProfiles": fex_profile_labels(fex_contract),

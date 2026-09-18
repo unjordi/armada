@@ -1,5 +1,6 @@
 import { definePlugin } from "@decky/api";
 import { getCompatApplied, getConfig, getInstalledGames, saveCompatApplied } from "./backend";
+import { ActiveProfileBadge } from "./components/ActiveProfileBadge";
 import { Content } from "./Content";
 import {
   configureCompatPolicy,
@@ -70,6 +71,9 @@ export default definePlugin(() => {
   return {
     name: "Armada Control",
     content: <Content />,
+    // armada#25 (partial -- see ActiveProfileBadge.tsx for what this does
+    // and doesn't cover): live active-power-profile indicator.
+    titleView: <ActiveProfileBadge />,
     onDismount() {
       cancelled = true;
       unregisterDownloadWatcher();

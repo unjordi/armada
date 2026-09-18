@@ -116,6 +116,7 @@ assert calls.pop() == (
         "brightness": 50,
         "effect": "static",
         "speed": 100,
+        "sync_brightness": None,
     },
 )
 rgb.set_rgb(True, "112233", 50, "breathing", 200)
@@ -127,8 +128,185 @@ assert calls.pop() == (
         "brightness": 50,
         "effect": "breathing",
         "speed": 200,
+        "sync_brightness": None,
     },
 )
+rgb.set_rgb(True, "112233", 50, "screen_sync", 100, True)
+assert calls.pop() == (
+    "set_rgb",
+    {
+        "enabled": True,
+        "color": "112233",
+        "brightness": 50,
+        "effect": "screen_sync",
+        "speed": 100,
+        "sync_brightness": True,
+    },
+)
+
+# armada#23/#27: ASSUMED CLI flag -- --sync-brightness / screen_sync effect
+# name. Verify against the real armada-rgb CLI contract once it exists and
+# update both action_set_rgb (above) and this test together.
+state = control.action_set_rgb(
+    {"enabled": True, "color": "a1b2c3", "brightness": 40, "sync_brightness": True}
+)
+assert commands.pop() == [
+    control.RGB_TOOL,
+    "set",
+    "--color",
+    "a1b2c3",
+    "--brightness",
+    "40",
+    "--sync-brightness",
+]
+
+state = control.action_set_rgb(
+    {"enabled": True, "color": "a1b2c3", "brightness": 40, "effect": "screen_sync"}
+)
+assert commands.pop() == [
+    control.RGB_TOOL,
+    "set",
+    "--color",
+    "a1b2c3",
+    "--brightness",
+    "40",
+    "--effect",
+    "screen_sync",
+]
+
+try:
+    control.action_set_rgb(
+        {"enabled": True, "color": "a1b2c3", "brightness": 40, "sync_brightness": "yes"}
+    )
+except ValueError:
+    pass
+else:
+    raise AssertionError("non-bool sync_brightness was accepted")
+
+# run_rgb error handling: a Python exception must never reach the UI as
+# opaque text (2026-09-18 QA: armada-rgb.service crash-looping surfaced as
+# a bare "Python Exception" toast). Every failure mode gets a clean,
+# actionable RuntimeError message instead.
+
+
+def missing_tool(command, **kwargs):
+    raise FileNotFoundError(command[0])
+
+
+control.subprocess.check_output = missing_tool
+try:
+    control.action_set_rgb({"enabled": True, "color": "a1b2c3", "brightness": 40})
+except RuntimeError as exc:
+    assert "not installed" in str(exc)
+else:
+    raise AssertionError("missing armada-rgb binary was not reported")
+
+
+def timed_out(command, **kwargs):
+    raise control.subprocess.TimeoutExpired(command, 5)
+
+
+control.subprocess.check_output = timed_out
+try:
+    control.action_set_rgb({"enabled": True, "color": "a1b2c3", "brightness": 40})
+except RuntimeError as exc:
+    assert "timed out" in str(exc)
+else:
+    raise AssertionError("armada-rgb timeout was not reported")
+
+
+def rejected(command, **kwargs):
+    raise control.subprocess.CalledProcessError(
+        2, command, stderr="error: unrecognized subcommand 'run'\n"
+    )
+
+
+control.subprocess.check_output = rejected
+try:
+    control.action_set_rgb({"enabled": True, "color": "a1b2c3", "brightness": 40})
+except RuntimeError as exc:
+    assert "unrecognized subcommand" in str(exc)
+else:
+    raise AssertionError("armada-rgb rejection was not reported")
+
+
+def bad_json(command, **kwargs):
+    return "not json"
+
+
+control.subprocess.check_output = bad_json
+try:
+    control.action_set_rgb({"enabled": True, "color": "a1b2c3", "brightness": 40})
+except RuntimeError as exc:
+    assert "unexpected response" in str(exc)
+else:
+    raise AssertionError("malformed armada-rgb output was not reported")
+
+control.subprocess.check_output = check_output
+
+# armada#24: switching the LIVE power profile via armada-power, independent
+# of [general] default_profile.
+power_commands = []
+
+
+def power_run(command, **kwargs):
+    power_commands.append(command)
+
+
+control.run = power_run
+assert control.action_set_power_profile({"profile": "performance"}) == {
+    "profile": "performance"
+}
+assert power_commands.pop() == [control.ARMADA_POWER_TOOL, "profile", "performance"]
+
+try:
+    control.action_set_power_profile({"profile": "turbo"})
+except ValueError:
+    pass
+else:
+    raise AssertionError("invalid power profile was accepted")
+
+
+def power_missing(command, **kwargs):
+    raise FileNotFoundError(command[0])
+
+
+control.run = power_missing
+try:
+    control.action_set_power_profile({"profile": "eco"})
+except RuntimeError as exc:
+    assert "not installed" in str(exc)
+else:
+    raise AssertionError("missing armada-power binary was not reported")
+
+assert "set_power_profile" in control.ACTIONS
+
+# privileged.py: a socket-level failure (armada-control.service itself down)
+# must not leak a raw errno/OSError string to the UI either.
+sys.path.insert(0, str(root / "decky/armada-control/py_modules"))
+import importlib
+
+privileged = importlib.import_module("armada_control.privileged")
+
+
+class FakeSocket:
+    def __init__(self, *a, **k):
+        pass
+
+    def __enter__(self):
+        raise FileNotFoundError("no such socket")
+
+    def __exit__(self, *a):
+        return False
+
+
+privileged.socket.socket = FakeSocket
+try:
+    privileged.call("get_rgb")
+except RuntimeError as exc:
+    assert "Couldn't reach" in str(exc)
+else:
+    raise AssertionError("missing armada-control socket was not reported")
 PYEOF
 
 ! rg -q 'ARMADA_RGB_' "$ROOT/system_files/usr/lib/armada/devices"

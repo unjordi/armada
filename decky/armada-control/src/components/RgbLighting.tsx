@@ -2,11 +2,15 @@ import { toaster } from "@decky/api";
 import { PanelSection } from "@decky/ui";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getRgb, setRgb } from "../backend";
+import { friendlyError } from "../lib/errors";
 import type { RgbConfig, RgbEffect } from "../types";
 import { SelectEdit, SliderEdit, ToggleRow } from "./widgets";
 
 const UPDATE_INTERVAL_MS: number = 100;
 
+// "Screen Sync" (armada#27, ambilight-style) is an ASSUMED addition -- see
+// the RgbEffect note in ../types.ts. Verify the effect name once the
+// armada-rgb CLI contract exists.
 const EFFECT_OPTIONS: { data: RgbEffect; label: string }[] = [
   { data: "static", label: "Static" },
   { data: "breathing", label: "Breathing" },
@@ -14,6 +18,7 @@ const EFFECT_OPTIONS: { data: RgbEffect; label: string }[] = [
   { data: "rainbow", label: "Rainbow" },
   { data: "load", label: "CPU Load" },
   { data: "battery", label: "Battery" },
+  { data: "screen_sync", label: "Screen Sync (Ambilight)" },
 ];
 
 // Effects that paint the configured base color (the rest derive their own hue).
@@ -70,7 +75,7 @@ export function RgbLighting() {
       savedConfig.current = JSON.stringify(next);
       setConfig(next);
     } catch (error) {
-      toaster.toast({ title: "Could not load RGB lighting", body: String(error) });
+      toaster.toast({ title: "Could not load RGB lighting", body: friendlyError(error) });
     }
   }, []);
 
@@ -94,10 +99,11 @@ export function RgbLighting() {
           config.brightness,
           config.effect ?? "static",
           config.speed ?? 100,
+          config.syncBrightness,
         );
         savedConfig.current = current;
       } catch (error) {
-        toaster.toast({ title: "Could not change RGB lighting", body: String(error) });
+        toaster.toast({ title: "Could not change RGB lighting", body: friendlyError(error) });
         load();
       }
     }, delay);
@@ -156,6 +162,14 @@ export function RgbLighting() {
         showValue={false}
         wrapperClassName="armada-slider-field armada-rgb-hue"
         onChange={(hue: number) => setConfig({ ...config, color: hueColor(hue) })}
+      />
+      {/* armada#23, ASSUMED contract -- see the RgbConfig.syncBrightness note in ../types.ts. */}
+      <ToggleRow
+        label="Sync brightness with screen"
+        description="Dims or brightens the lighting to track the panel backlight, regardless of effect."
+        value={!!config.syncBrightness}
+        disabled={!config.enabled}
+        onChange={(syncBrightness: boolean) => setConfig({ ...config, syncBrightness })}
       />
     </PanelSection>
   );

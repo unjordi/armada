@@ -21,7 +21,10 @@ SOCKET = Path("/run/armada/control.sock")
 SESSION_SOCKET = Path(armada_perf.SESSION_SOCKET)
 ABL_VERSION_TOOL = "/usr/lib/armada/abl-version"
 RGB_TOOL = "/usr/bin/armada-rgb"
-RGB_EFFECTS = ("static", "breathing", "color_cycle", "rainbow", "load", "battery")
+# "screen_sync" (armada#27, ambilight-style) is an ASSUMED addition -- see the
+# note above action_set_rgb. Verify the exact effect name armada-rgb expects
+# once the CLI contract lands.
+RGB_EFFECTS = ("static", "breathing", "color_cycle", "rainbow", "load", "battery", "screen_sync")
 RGB_SPEED_MIN = 1
 RGB_SPEED_MAX = 1000
 ABL_CONFIG = Path("/etc/armada/abl.conf")
@@ -34,6 +37,8 @@ MAX_REQUEST = 1024 * 1024
 CLIENT_TIMEOUT = 5
 CONTROLLER_TYPES = {"deck-uhid", "xbox-series", "xb360", "ds5"}
 INTERCEPT_MODES = {"overlay", "reset"}
+ARMADA_POWER_TOOL = "/usr/bin/armada-power"
+POWER_PROFILE_NAMES = ("eco", "balanced", "performance")
 SLEEP_CONFIG = Path("/etc/armada/sleep.conf")
 SUSPEND_MODE_KEY = "suspend_mode"
 NM_IGNORE_SLEEP = Path("/etc/NetworkManager/ignore-sleep")
@@ -524,8 +529,30 @@ def rgb_supported():
 
 
 def run_rgb(command):
-    output = subprocess.check_output([RGB_TOOL, *command], text=True, timeout=5)
-    config = json.loads(output)
+    # Turn low-level subprocess/parse failures into a message the UI can show
+    # as-is instead of a bare "Python Exception" toast (the 2026-09-18 QA:
+    # armada-rgb.service was crash-looping on a version skew and every RGB
+    # action surfaced as opaque text). Each branch says WHAT broke so it's
+    # actionable even without opening a shell.
+    try:
+        output = subprocess.check_output(
+            [RGB_TOOL, *command], text=True, timeout=5, stderr=subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("armada-rgb is not installed on this device")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("RGB lighting service isn't responding (timed out)")
+    except subprocess.CalledProcessError as exc:
+        stderr = exc.stderr if isinstance(exc.stderr, str) else ""
+        detail = stderr.strip().splitlines()[-1] if stderr.strip() else ""
+        raise RuntimeError(
+            "RGB lighting service rejected the request"
+            + (f": {detail}" if detail else f" (exit {exc.returncode})")
+        )
+    try:
+        config = json.loads(output)
+    except json.JSONDecodeError:
+        raise RuntimeError("RGB lighting service returned an unexpected response")
     if not isinstance(config, dict):
         raise RuntimeError("invalid armada-rgb response")
     return config
@@ -583,7 +610,34 @@ def action_set_rgb(request):
             raise ValueError("invalid RGB speed")
         command += ["--speed", str(speed)]
 
+    # ASSUMED armada-rgb CLI contract (armada#23, screen-brightness-synced
+    # lighting) -- no contract doc existed yet from the kernel/CLI side as of
+    # 2026-09-18. `--sync-brightness` is a guess at the flag name; verify
+    # against .claude/projects/rp6-rgb-cli-contract-2026-09-18.md once it
+    # exists and rename here (single call site) if it differs.
+    sync_brightness = request.get("sync_brightness")
+    if sync_brightness is not None:
+        if not isinstance(sync_brightness, bool):
+            raise ValueError("invalid RGB sync_brightness")
+        if sync_brightness:
+            command += ["--sync-brightness"]
+
     return run_rgb(command)
+
+
+def action_set_power_profile(request):
+    name = str(request.get("profile", ""))
+    if name not in POWER_PROFILE_NAMES:
+        raise ValueError("invalid power profile")
+    try:
+        run([ARMADA_POWER_TOOL, "profile", name])
+    except FileNotFoundError:
+        raise RuntimeError("armada-power is not installed on this device")
+    except subprocess.CalledProcessError:
+        raise RuntimeError("could not switch the active power profile")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("armada-power didn't respond (timed out)")
+    return {"profile": name}
 
 
 def action_inputplumber_intercept(request):
@@ -810,6 +864,7 @@ ACTIONS = {
     "write_config": action_write_config,
     "reapply_perf": action_reapply_perf,
     "restart_game_mode": action_restart_game_mode,
+    "set_power_profile": action_set_power_profile,
 }
 
 

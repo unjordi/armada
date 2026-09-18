@@ -5,6 +5,8 @@ export const getConfig = () => call<[], Config>("get_config");
 export const getInstalledGames = () => call<[], InstalledGame[]>("get_installed_games");
 export const getCompatMappedAppids = (tool: string) => call<[string], string[]>("get_compat_mapped_appids", tool);
 export const savePowerConfig = (data: PowerConfig) => call<[PowerConfig], Config>("save_power_config", data);
+export const setActivePowerProfile = (name: string) => call<[string], Config>("set_active_power_profile", name);
+export const getActivePowerProfile = () => call<[], string>("get_active_power_profile");
 export const saveTweaks = (data: Tweaks) => call<[Tweaks], Config>("save_tweaks", data);
 export const getCompatApplied = () => call<[], CompatAppliedState>("get_compat_applied");
 let compatAppliedSaveChain = Promise.resolve<unknown>(undefined);
@@ -28,8 +30,17 @@ export const reapplyPerf = () => call<[], { pids?: number }>("reapply_perf");
 export const restartGameMode = () => call<[], boolean>("restart_game_mode");
 export const setControllerType = (value: string) => call<[string], string>("set_controller_type", value);
 export const getRgb = () => call<[], RgbConfig | null>("get_rgb");
-export const setRgb = (enabled: boolean, color: string, brightness: number, effect: RgbEffect, speed: number) =>
-  call<[boolean, string, number, string, number], RgbConfig>("set_rgb", enabled, color, brightness, effect, speed);
+export const setRgb = (
+  enabled: boolean,
+  color: string,
+  brightness: number,
+  effect: RgbEffect,
+  speed: number,
+  syncBrightness?: boolean,
+) =>
+  call<[boolean, string, number, string, number, boolean | null | undefined], RgbConfig>(
+    "set_rgb", enabled, color, brightness, effect, speed, syncBrightness,
+  );
 export const getControllerState = () => call<[], CalibrationState>("get_controller_state");
 export const saveCalibration = (capture: Capture) => call<[Capture], CalibrationState>("save_calibration", capture);
 export const resetCalibration = () => call<[], CalibrationState>("reset_calibration");

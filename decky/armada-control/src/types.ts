@@ -71,7 +71,11 @@ export interface CalibrationState {
   params?: Record<string, number>;
 }
 
-export type RgbEffect = "static" | "breathing" | "color_cycle" | "rainbow" | "load" | "battery";
+// "screen_sync" (armada#27, ambilight-style) is an ASSUMED addition to the
+// armada-rgb CLI contract -- no contract doc existed from the kernel/CLI
+// side as of 2026-09-18. Verify against
+// .claude/projects/rp6-rgb-cli-contract-2026-09-18.md once it exists.
+export type RgbEffect = "static" | "breathing" | "color_cycle" | "rainbow" | "load" | "battery" | "screen_sync";
 
 export interface RgbConfig {
   version: number;
@@ -81,6 +85,9 @@ export interface RgbConfig {
   // Omitted by armada-rgb when at their defaults (static / 100).
   effect?: RgbEffect;
   speed?: number;
+  // armada#23, ASSUMED addition: dims/brightens the LEDs to track the panel
+  // backlight regardless of effect. See the RgbEffect note above.
+  syncBrightness?: boolean;
 }
 
 export interface GameRef {
@@ -99,6 +106,11 @@ export interface PerfInfo {
 export interface Config {
   power: PowerConfig;
   powerDefaults: PowerConfig;
+  // armada#24: the profile armada-powerd is running RIGHT NOW (live daemon
+  // state), independent of power.general.default_profile. This is what
+  // Steam's native "Rendimiento" panel also drives, so Power.tsx uses it as
+  // the single source of truth for "what's active" instead of drifting.
+  activePowerProfile: string;
   tweaks: Tweaks;
   installedGames: InstalledGame[];
   fexProfiles: Record<string, FexProfile>;
