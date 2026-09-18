@@ -74,5 +74,22 @@ check "unknown device keeps the s2idle fleet default" \
 check "RP6 stays on deep when only deep is advertised" \
     "$(resolve_mode 'Retroid Pocket 6' '[deep]')" deep
 
+# 7. Fleet gate: an UNVALIDATED model (AYN Odin 2) does not run deep even when a
+#    user sleep.conf asks for it and the kernel advertises deep -- it falls back
+#    to the profile default (s2idle). This is the second compuerta: kernel-capable
+#    is not enough; the model must be validated.
+check "unvalidated model ignores a sleep.conf deep override" \
+    "$(resolve_mode 'AYN Odin 2' 's2idle [deep]' 'suspend_mode=deep')" s2idle
+
+# 8. Unvalidated model whose kernel advertises ONLY deep: a deep override drops to
+#    the profile default (s2idle), which is not advertised, so it degrades to fake
+#    -- never deep on unvetted hardware.
+check "unvalidated model degrades a deep override to fake when only deep is advertised" \
+    "$(resolve_mode 'AYN Odin 2' '[deep]' 'suspend_mode=deep')" fake
+
+# 9. Same gate for an unknown device: a deep override never wins.
+check "unknown device ignores a sleep.conf deep override" \
+    "$(resolve_mode 'No Such Handheld' 's2idle [deep]' 'suspend_mode=deep')" s2idle
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [[ "$fail" -eq 0 ]]

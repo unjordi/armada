@@ -16,12 +16,28 @@ export function SelectEdit({ label, value, options, onChange, disabled, placehol
   placeholder?: string;
   wrapperClassName?: string;
 }) {
-  const rgOptions = options.map((option) => (typeof option === "string" ? { data: option, label: option } : option));
+  // Per-option disabled: shown greyed (via the option's disabled flag where the
+  // Dropdown honours it) and always decorated with a cue, so an option that is
+  // present-but-not-selectable (e.g. deep sleep on an unvalidated model) never
+  // looks pickable. Selecting one is a no-op regardless of Dropdown support.
+  const disabledData = new Set<string>();
+  const rgOptions = options.map((option) => {
+    const choice = typeof option === "string" ? { data: option, label: option } : option;
+    if (choice.disabled) {
+      disabledData.add(choice.data);
+      return { ...choice, label: `${choice.label} (unavailable)` };
+    }
+    return choice;
+  });
+  const handleChange = (option: { data: any }) => {
+    if (disabledData.has(option.data)) return;
+    onChange(option.data);
+  };
   const dropdown = label === undefined ? (
-    <Dropdown disabled={disabled} strDefaultLabel={placeholder} selectedOption={value} rgOptions={rgOptions} onChange={(option) => onChange(option.data)} />
+    <Dropdown disabled={disabled} strDefaultLabel={placeholder} selectedOption={value} rgOptions={rgOptions} onChange={handleChange} />
   ) : (
     <Field label={label} childrenLayout="below" childrenContainerWidth="max" disabled={disabled}>
-      <Dropdown disabled={disabled} strDefaultLabel={placeholder} selectedOption={value} rgOptions={rgOptions} onChange={(option) => onChange(option.data)} />
+      <Dropdown disabled={disabled} strDefaultLabel={placeholder} selectedOption={value} rgOptions={rgOptions} onChange={handleChange} />
     </Field>
   );
   return (

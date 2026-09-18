@@ -43,6 +43,18 @@ fi
 
 profile_suspend_mode=${ARMADA_SUSPEND_MODE:-fake}
 
+# Deep suspend is a per-device VALIDATED capability, not just a kernel one: a
+# model is cleared for deep only after deep-charge + resume are verified on that
+# hardware. A device .conf declares validation in its own idiom -- either by
+# making deep the default (ARMADA_SUSPEND_MODE=deep, as the RP6 does) or, to
+# clear deep without making it the default, ARMADA_SUSPEND_DEEP_VALIDATED=1.
+# defaults.conf keeps the fleet floor at 0, so an unvalidated model never runs
+# deep even on a kernel that advertises it.
+deep_validated=${ARMADA_SUSPEND_DEEP_VALIDATED:-0}
+if [[ "$profile_suspend_mode" == deep ]]; then
+    deep_validated=1
+fi
+
 mem_sleep=${ARMADA_MEM_SLEEP_PATH:-/sys/power/mem_sleep}
 mem_sleep_modes=
 if [[ -r "$mem_sleep" ]]; then
@@ -62,6 +74,16 @@ if [[ -r "$sleep_config" ]]; then
         fi
     done <"$sleep_config"
 fi
+# Fleet gate for deep: it runs only when BOTH compuertas pass -- (1) the running
+# kernel advertises deep in mem_sleep (checked just below) AND (2) this model is
+# validated for deep. An unvalidated model that asked for deep (a profile that
+# never validates cannot, but a user /etc/armada/sleep.conf override can) falls
+# back to its profile default -- s2idle for the fleet -- instead of running deep
+# on unvetted hardware.
+if [[ "$ARMADA_SUSPEND_MODE" == deep && "$deep_validated" != 1 ]]; then
+    ARMADA_SUSPEND_MODE=$profile_suspend_mode
+fi
+
 # Never hand systemd-sleep a mode the running kernel cannot do (including a
 # profile default): a real mode that mem_sleep does not advertise degrades to
 # fake so suspend still happens instead of failing.
@@ -112,12 +134,17 @@ case "${ARMADA_SOC_CLASS:-}" in
         ;;
 esac
 
+# Publish the resolved validation state so the UI/backend read one source of
+# truth (whether to offer deep enabled or greyed) instead of re-deriving it.
+ARMADA_SUSPEND_DEEP_VALIDATED=$deep_validated
+
 vars=(
     ARMADA_DEVICE_ID
     ARMADA_DEVICE_NAME
     ARMADA_SOC_CLASS
     ARMADA_PROTON_DEFAULTS
     ARMADA_SUSPEND_MODE
+    ARMADA_SUSPEND_DEEP_VALIDATED
     ARMADA_SYNC_SUSPEND
     ARMADA_PRIMARY_CONNECTOR
     ARMADA_PRIMARY_BACKLIGHT
