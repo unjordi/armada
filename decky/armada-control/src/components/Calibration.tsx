@@ -7,6 +7,7 @@ import {
   showModal,
 } from "@decky/ui";
 import { useEffect, useRef, useState } from "react";
+import { friendlyError } from "../lib/errors";
 import {
   beginCalibrationSession,
   endCalibrationSession,
@@ -105,7 +106,7 @@ function CalibrationModal({ closeModal }: { closeModal?: () => void }) {
           setCapture((current) => updateCapture(current || makeCapture(next), next));
         }
       } catch (error) {
-        if (!cancelled) setState({ supported: false, reason: String(error), controls: {} } as CalibrationState);
+        if (!cancelled) setState({ supported: false, reason: friendlyError(error, "Controller calibration isn't available on this device."), controls: {} } as CalibrationState);
       } finally {
         inflight = false;
       }
@@ -143,7 +144,7 @@ function CalibrationModal({ closeModal }: { closeModal?: () => void }) {
       setCapture(null);
       setPhase("idle");
     } catch (error) {
-      setState((current) => ({ ...(current || {}), supported: false, reason: String(error) } as CalibrationState));
+      setState((current) => ({ ...(current || {}), supported: false, reason: friendlyError(error, "Couldn't update calibration. Try again.") } as CalibrationState));
       setPhase("idle");
     }
   };
@@ -152,7 +153,7 @@ function CalibrationModal({ closeModal }: { closeModal?: () => void }) {
       const next = await resetCalibration();
       setState(next);
     } catch (error) {
-      setState((current) => ({ ...(current || {}), supported: false, reason: String(error) } as CalibrationState));
+      setState((current) => ({ ...(current || {}), supported: false, reason: friendlyError(error, "Couldn't update calibration. Try again.") } as CalibrationState));
     }
   };
 
