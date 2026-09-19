@@ -17,6 +17,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { getCompatMappedAppids, reapplyPerf, restartGameMode, saveCompatApplied, saveTweaks } from "../backend";
 import { SelectEdit, SliderEdit } from "../components/widgets";
 import { getGlobalResolution, setGlobalResolution } from "../lib/steamSettings";
+import { friendlyError } from "../lib/errors";
 import { clone } from "../lib/util";
 import { availableGames, editTargetOptions } from "../lib/games";
 import {
@@ -641,7 +642,7 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
       await reapplyPerf();
       setReapplyStatus("Applied to running game");
     } catch (error) {
-      setReapplyStatus(String(error));
+      setReapplyStatus(friendlyError(error, "Couldn't apply to the running game."));
     }
   };
   const restartWithTweaks = async () => {
@@ -650,7 +651,7 @@ export function Compatibility({ config, setConfig }: { config: Config; setConfig
       await saveTweaks(tweaksRef.current);
       await restartGameMode();
     } catch (error) {
-      setReapplyStatus(`Restart failed: ${String(error)}`);
+      setReapplyStatus(`Restart failed: ${friendlyError(error, "couldn't restart Game Mode")}`);
     }
   };
   const setGamescopeVulkanRealtime = (on: boolean) => {
