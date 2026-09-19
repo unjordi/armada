@@ -135,5 +135,14 @@ if env ARMADA_RGB_INDICATOR_LEDS="$tmp/nope/rgb:l?" ARMADA_RGB_KEEPALIVE="$tmp/n
      ARMADA_RGB_CHARGE_INDICATOR_CONFIG="$indicator_config" ARMADA_RGB_TOOL="$rgb_tool" RGB_CALLS="$rgb_calls" \
      bash "$HOOK" pre suspend; then echo "ok: no nodes -> pre exit 0"; else echo "FAIL: missing nodes should not block suspend"; fail=1; fi
 
+# 10) partial hardware: a node ABSENT mid-list is skipped gracefully — the hook
+#     still exits 0 (never blocks suspend) and the LEDs that ARE present still
+#     get armed. (One HTR3212 controller unbound / a node not yet probed.)
+reset_nodes; set_indicator 1
+rm -rf "$tmp/leds/rgb:l2"   # yank one node from the middle of the glob
+if run_hook pre suspend; then partial_rc=1; else partial_rc=0; fail=1; fi
+check "pre+missing-node: exit 0 (never blocks suspend)" "$partial_rc" "1"
+check "pre+missing-node: a present LED still got armed" "$(cat "$tmp/leds/rgb:l1/trigger" 2>/dev/null)" "$TRIGGER"
+
 if (( fail )); then echo "rgb-suspend-charging hook: FAILURES"; exit 1; fi
 echo "PASS: rgb-suspend-charging-hook-test (design A / kernel trigger)"
