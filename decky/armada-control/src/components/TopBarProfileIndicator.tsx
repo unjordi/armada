@@ -106,15 +106,14 @@ function profileGlyph(profile: string) {
 const TOP_OFFSET = "calc(env(safe-area-inset-top, 0px) + 6px)";
 const RIGHT_OFFSET = "132px";
 
-export function TopBarProfileIndicator() {
-  // Compose the overlay on top of the gamepadui (home/library/QAM) — the
-  // surfaces where the top bar exists. This is the brightness-bar pattern.
+// Only the child that actually draws requests gamescope composition, so we do
+// NOT hold a Notification composition open when the profile is balanced/unknown
+// (glyph === null) and nothing is on screen. useUIComposition stays an
+// unconditional hook here — this component is only mounted when there is a glyph
+// — so the rules of hooks hold while the composition cost is paid only when the
+// overlay is visible.
+function ComposedGlyph({ glyph }: { glyph: NonNullable<ReturnType<typeof profileGlyph>> }) {
   useUIComposition(UIComposition.Notification);
-
-  const profile = useActivePowerProfile();
-  const glyph = profileGlyph(profile);
-  if (!glyph) return null; // balanced / unreadable → nothing, no exception
-
   return (
     <div
       style={{
@@ -132,4 +131,11 @@ export function TopBarProfileIndicator() {
       {glyph}
     </div>
   );
+}
+
+export function TopBarProfileIndicator() {
+  const profile = useActivePowerProfile();
+  const glyph = profileGlyph(profile);
+  if (!glyph) return null; // balanced / unreadable → nothing, no composition
+  return <ComposedGlyph glyph={glyph} />;
 }
